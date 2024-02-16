@@ -141,6 +141,12 @@ Init
   result in deletion of files in use by an existing instance. (#28784, #28946)
 - Improved handling of empty `settings.json` files. (#29144)
 
+### Miscellaneous
+
+- #28391 refactor: Simplify CTxMempool/BlockAssembler fields, remove some external mapTx access
+- #29179 test: wallet rescan with reorged parent + IsFromMe child in mempool
+- #28791 snapshots: don't core dump when running -checkblockindex after loadtxoutset
+
 Credits
 =======
 
