@@ -146,6 +146,8 @@ Init
 - #28391 refactor: Simplify CTxMempool/BlockAssembler fields, remove some external mapTx access
 - #29179 test: wallet rescan with reorged parent + IsFromMe child in mempool
 - #28791 snapshots: don't core dump when running -checkblockindex after loadtxoutset
+- #29357 test: Drop x modifier in fsbridge::fopen call for MinGW builds
+- #29529 fuzz: restrict fopencookie usage to Linux & FreeBSD
 
 Credits
 =======
