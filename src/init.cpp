@@ -250,7 +250,6 @@ void Interrupt(NodeContext& node)
     InterruptHTTPServer();
     InterruptHTTPRPC();
     InterruptRPC();
-    InterruptREST();
     InterruptTorControl();
     InterruptMapPort();
     if (node.connman)
