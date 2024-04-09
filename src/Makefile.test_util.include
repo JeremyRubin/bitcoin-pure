@@ -26,10 +26,6 @@ TEST_UTIL_H = \
   test/util/validation.h \
   test/util/xoroshiro128plusplus.h
 
-if ENABLE_WALLET
-TEST_UTIL_H += wallet/test/util.h
-endif # ENABLE_WALLET
-
 libtest_util_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS)
 libtest_util_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libtest_util_a_SOURCES = \
@@ -47,9 +43,5 @@ libtest_util_a_SOURCES = \
   test/util/transaction_utils.cpp \
   test/util/txmempool.cpp \
   test/util/validation.cpp
-
-if ENABLE_WALLET
-libtest_util_a_SOURCES += wallet/test/util.cpp
-endif # ENABLE_WALLET
 
 libtest_util_a_SOURCES += $(TEST_UTIL_H)
