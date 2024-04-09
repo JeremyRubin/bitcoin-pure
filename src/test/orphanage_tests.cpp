@@ -4,7 +4,6 @@
 
 #include <arith_uint256.h>
 #include <pubkey.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
@@ -76,48 +75,6 @@ BOOST_AUTO_TEST_CASE(DoS_mapOrphans)
         orphanage.AddTx(MakeTransactionRef(tx), i);
     }
 
-    // ... and 50 that depend on other orphans:
-    for (int i = 0; i < 50; i++)
-    {
-        CTransactionRef txPrev = orphanage.RandomOrphan();
-
-        CMutableTransaction tx;
-        tx.vin.resize(1);
-        tx.vin[0].prevout.n = 0;
-        tx.vin[0].prevout.hash = txPrev->GetHash();
-        tx.vout.resize(1);
-        tx.vout[0].nValue = 1*CENT;
-        tx.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
-        SignatureData empty;
-        BOOST_CHECK(SignSignature(keystore, *txPrev, tx, 0, SIGHASH_ALL, empty));
-
-        orphanage.AddTx(MakeTransactionRef(tx), i);
-    }
-
-    // This really-big orphan should be ignored:
-    for (int i = 0; i < 10; i++)
-    {
-        CTransactionRef txPrev = orphanage.RandomOrphan();
-
-        CMutableTransaction tx;
-        tx.vout.resize(1);
-        tx.vout[0].nValue = 1*CENT;
-        tx.vout[0].scriptPubKey = GetScriptForDestination(PKHash(key.GetPubKey()));
-        tx.vin.resize(2777);
-        for (unsigned int j = 0; j < tx.vin.size(); j++)
-        {
-            tx.vin[j].prevout.n = j;
-            tx.vin[j].prevout.hash = txPrev->GetHash();
-        }
-        SignatureData empty;
-        BOOST_CHECK(SignSignature(keystore, *txPrev, tx, 0, SIGHASH_ALL, empty));
-        // Re-use same signature for other inputs
-        // (they don't have to be valid for this test)
-        for (unsigned int j = 1; j < tx.vin.size(); j++)
-            tx.vin[j].scriptSig = tx.vin[0].scriptSig;
-
-        BOOST_CHECK(!orphanage.AddTx(MakeTransactionRef(tx), i));
-    }
 
     // Test EraseOrphansFor:
     for (NodeId i = 0; i < 3; i++)

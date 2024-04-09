@@ -5,7 +5,6 @@
 #include <consensus/validation.h>
 #include <key.h>
 #include <random.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <test/util/setup_common.h>
 #include <txmempool.h>
@@ -328,12 +327,6 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, Dersig100Setup)
         valid_with_witness_tx.vout[0].scriptPubKey = p2pk_scriptPubKey;
 
         // Sign
-        SignatureData sigdata;
-        BOOST_CHECK(ProduceSignature(keystore, MutableTransactionSignatureCreator(valid_with_witness_tx, 0, 11 * CENT, SIGHASH_ALL), spend_tx.vout[1].scriptPubKey, sigdata));
-        UpdateInput(valid_with_witness_tx.vin[0], sigdata);
-
-        // This should be valid under all script flags.
-        ValidateCheckInputsForAllFlags(CTransaction(valid_with_witness_tx), 0, true, m_node.chainman->ActiveChainstate().CoinsTip());
 
         // Remove the witness, and check that it is now invalid.
         valid_with_witness_tx.vin[0].scriptWitness.SetNull();
@@ -354,15 +347,6 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, Dersig100Setup)
         tx.vout[0].nValue = 22*CENT;
         tx.vout[0].scriptPubKey = p2pk_scriptPubKey;
 
-        // Sign
-        for (int i = 0; i < 2; ++i) {
-            SignatureData sigdata;
-            BOOST_CHECK(ProduceSignature(keystore, MutableTransactionSignatureCreator(tx, i, 11 * CENT, SIGHASH_ALL), spend_tx.vout[i].scriptPubKey, sigdata));
-            UpdateInput(tx.vin[i], sigdata);
-        }
-
-        // This should be valid under all script flags
-        ValidateCheckInputsForAllFlags(CTransaction(tx), 0, true, m_node.chainman->ActiveChainstate().CoinsTip());
 
         // Check that if the second input is invalid, but the first input is
         // valid, the transaction is not cached.

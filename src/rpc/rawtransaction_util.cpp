@@ -13,8 +13,6 @@
 #include <primitives/transaction.h>
 #include <rpc/request.h>
 #include <rpc/util.h>
-#include <script/sign.h>
-#include <script/signingprovider.h>
 #include <tinyformat.h>
 #include <univalue.h>
 #include <util/rbf.h>
@@ -287,35 +285,3 @@ void ParsePrevouts(const UniValue& prevTxsUnival, FillableSigningProvider* keyst
     }
 }
 
-void SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, const std::map<COutPoint, Coin>& coins, const UniValue& hashType, UniValue& result)
-{
-    int nHashType = ParseSighashString(hashType);
-
-    // Script verification errors
-    std::map<int, bilingual_str> input_errors;
-
-    bool complete = SignTransaction(mtx, keystore, coins, nHashType, input_errors);
-    SignTransactionResultToJSON(mtx, complete, coins, input_errors, result);
-}
-
-void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const std::map<COutPoint, Coin>& coins, const std::map<int, bilingual_str>& input_errors, UniValue& result)
-{
-    // Make errors UniValue
-    UniValue vErrors(UniValue::VARR);
-    for (const auto& err_pair : input_errors) {
-        if (err_pair.second.original == "Missing amount") {
-            // This particular error needs to be an exception for some reason
-            throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Missing amount for %s", coins.at(mtx.vin.at(err_pair.first).prevout).out.ToString()));
-        }
-        TxInErrorToJSON(mtx.vin.at(err_pair.first), vErrors, err_pair.second.original);
-    }
-
-    result.pushKV("hex", EncodeHexTx(CTransaction(mtx)));
-    result.pushKV("complete", complete);
-    if (!vErrors.empty()) {
-        if (result.exists("errors")) {
-            vErrors.push_backV(result["errors"].getValues());
-        }
-        result.pushKV("errors", vErrors);
-    }
-}

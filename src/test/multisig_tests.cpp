@@ -7,7 +7,6 @@
 #include <script/interpreter.h>
 #include <script/script.h>
 #include <script/script_error.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <test/util/setup_common.h>
 #include <tinyformat.h>
@@ -215,11 +214,6 @@ BOOST_AUTO_TEST_CASE(multisig_Sign)
         txTo[i].vout[0].nValue = 1;
     }
 
-    for (int i = 0; i < 3; i++)
-    {
-        SignatureData empty;
-        BOOST_CHECK_MESSAGE(SignSignature(keystore, CTransaction(txFrom), txTo[i], 0, SIGHASH_ALL, empty), strprintf("SignSignature %d", i));
-    }
 }
 
 

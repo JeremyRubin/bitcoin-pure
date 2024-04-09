@@ -7,8 +7,6 @@
 
 #include <pubkey.h>
 #include <script/script.h>
-#include <script/sign.h>
-#include <script/signingprovider.h>
 #include <util/vector.h>
 
 #include <assert.h>
@@ -81,31 +79,6 @@ std::vector<CTxDestination> GetAllDestinationsForKey(const CPubKey& key)
     }
 }
 
-CTxDestination AddAndGetDestinationForScript(FillableSigningProvider& keystore, const CScript& script, OutputType type)
-{
-    // Add script to keystore
-    keystore.AddCScript(script);
-    // Note that scripts over 520 bytes are not yet supported.
-    switch (type) {
-    case OutputType::LEGACY:
-        return ScriptHash(script);
-    case OutputType::P2SH_SEGWIT:
-    case OutputType::BECH32: {
-        CTxDestination witdest = WitnessV0ScriptHash(script);
-        CScript witprog = GetScriptForDestination(witdest);
-        // Add the redeemscript, so that P2WSH and P2SH-P2WSH outputs are recognized as ours.
-        keystore.AddCScript(witprog);
-        if (type == OutputType::BECH32) {
-            return witdest;
-        } else {
-            return ScriptHash(witprog);
-        }
-    }
-    case OutputType::BECH32M:
-    case OutputType::UNKNOWN: {} // This function should not be used for BECH32M or UNKNOWN, so let it assert
-    } // no default case, so the compiler can warn about missing cases
-    assert(false);
-}
 
 std::optional<OutputType> OutputTypeFromDestination(const CTxDestination& dest) {
     if (std::holds_alternative<PKHash>(dest) ||

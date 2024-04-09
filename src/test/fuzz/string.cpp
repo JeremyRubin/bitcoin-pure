@@ -14,7 +14,6 @@
 #include <rpc/request.h>
 #include <rpc/server.h>
 #include <rpc/util.h>
-#include <script/descriptor.h>
 #include <script/script.h>
 #include <serialize.h>
 #include <streams.h>
@@ -55,7 +54,6 @@ FUZZ_TARGET(string)
     const auto width{fuzzed_data_provider.ConsumeIntegralInRange<size_t>(1, 1000)};
     (void)FormatParagraph(random_string_1, width, fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, width));
     (void)FormatSubVersion(random_string_1, fuzzed_data_provider.ConsumeIntegral<int>(), random_string_vector);
-    (void)GetDescriptorChecksum(random_string_1);
     (void)HelpExampleCli(random_string_1, random_string_2);
     (void)HelpExampleRpc(random_string_1, random_string_2);
     (void)HelpMessageGroup(random_string_1);

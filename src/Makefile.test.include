@@ -91,7 +91,6 @@ BITCOIN_TESTS =\
   test/cuckoocache_tests.cpp \
   test/dbwrapper_tests.cpp \
   test/denialofservice_tests.cpp \
-  test/descriptor_tests.cpp \
   test/flatfile_tests.cpp \
   test/fs_tests.cpp \
   test/getarg_tests.cpp \
@@ -108,7 +107,6 @@ BITCOIN_TESTS =\
   test/merkleblock_tests.cpp \
   test/miner_tests.cpp \
   test/miniminer_tests.cpp \
-  test/miniscript_tests.cpp \
   test/minisketch_tests.cpp \
   test/multisig_tests.cpp \
   test/net_peer_eviction_tests.cpp \
@@ -232,7 +230,6 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/crypto_poly1305.cpp \
  test/fuzz/cuckoocache.cpp \
  test/fuzz/decode_tx.cpp \
- test/fuzz/descriptor_parse.cpp \
  test/fuzz/deserialize.cpp \
  test/fuzz/eval_script.cpp \
  test/fuzz/fee_rate.cpp \
@@ -251,7 +248,6 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/locale.cpp \
  test/fuzz/merkleblock.cpp \
  test/fuzz/message.cpp \
- test/fuzz/miniscript.cpp \
  test/fuzz/minisketch.cpp \
  test/fuzz/mini_miner.cpp \
  test/fuzz/muhash.cpp \
@@ -284,7 +280,6 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/script.cpp \
  test/fuzz/script_assets_test_minimizer.cpp \
  test/fuzz/script_bitcoin_consensus.cpp \
- test/fuzz/script_descriptor_cache.cpp \
  test/fuzz/script_flags.cpp \
  test/fuzz/script_format.cpp \
  test/fuzz/script_interpreter.cpp \

@@ -11,7 +11,6 @@
 #include <rpc/util.h>
 #include <script/keyorigin.h>
 #include <script/script.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <streams.h>
