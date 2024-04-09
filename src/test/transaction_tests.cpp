@@ -17,7 +17,6 @@
 #include <policy/settings.h>
 #include <script/script.h>
 #include <script/script_error.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <streams.h>
@@ -551,14 +550,6 @@ BOOST_AUTO_TEST_CASE(test_big_witness_transaction)
     assert(controlCheck);
 }
 
-SignatureData CombineSignatures(const CMutableTransaction& input1, const CMutableTransaction& input2, const CTransactionRef tx)
-{
-    SignatureData sigdata;
-    sigdata = DataFromTransaction(input1, 0, tx->vout[0]);
-    sigdata.MergeSignatureData(DataFromTransaction(input2, 0, tx->vout[0]));
-    ProduceSignature(DUMMY_SIGNING_PROVIDER, MutableTransactionSignatureCreator(input1, 0, tx->vout[0].nValue, SIGHASH_ALL), tx->vout[0].scriptPubKey, sigdata);
-    return sigdata;
-}
 
 BOOST_AUTO_TEST_CASE(test_witness)
 {
@@ -698,8 +689,6 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CreateCreditAndSpend(keystore2, scriptMulti, output2, input2, false);
     CheckWithFlag(output2, input2, 0, false);
     BOOST_CHECK(*output1 == *output2);
-    UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
-    CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
 
     // P2SH 2-of-2 multisig
     CreateCreditAndSpend(keystore, GetScriptForDestination(ScriptHash(scriptMulti)), output1, input1, false);
@@ -709,9 +698,6 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CheckWithFlag(output2, input2, 0, true);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH, false);
     BOOST_CHECK(*output1 == *output2);
-    UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
-    CheckWithFlag(output1, input1, SCRIPT_VERIFY_P2SH, true);
-    CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
 
     // Witness 2-of-2 multisig
     CreateCreditAndSpend(keystore, destination_script_multi, output1, input1, false);
@@ -721,9 +707,6 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CheckWithFlag(output2, input2, 0, true);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, false);
     BOOST_CHECK(*output1 == *output2);
-    UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
-    CheckWithFlag(output1, input1, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, true);
-    CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
 
     // P2SH witness 2-of-2 multisig
     CreateCreditAndSpend(keystore, GetScriptForDestination(ScriptHash(destination_script_multi)), output1, input1, false);
@@ -733,9 +716,6 @@ BOOST_AUTO_TEST_CASE(test_witness)
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH, true);
     CheckWithFlag(output2, input2, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, false);
     BOOST_CHECK(*output1 == *output2);
-    UpdateInput(input1.vin[0], CombineSignatures(input1, input2, output1));
-    CheckWithFlag(output1, input1, SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS, true);
-    CheckWithFlag(output1, input1, STANDARD_SCRIPT_VERIFY_FLAGS, true);
 }
 
 BOOST_AUTO_TEST_CASE(test_IsStandard)

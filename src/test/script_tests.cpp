@@ -16,7 +16,6 @@
 #include <script/script.h>
 #include <script/script_error.h>
 #include <script/sigcache.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <streams.h>
@@ -1149,15 +1148,6 @@ BOOST_AUTO_TEST_CASE(script_CHECKMULTISIG23)
     BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_INVALID_STACK_OPERATION, ScriptErrorString(err));
 }
 
-/* Wrapper around ProduceSignature to combine two scriptsigs */
-SignatureData CombineSignatures(const CTxOut& txout, const CMutableTransaction& tx, const SignatureData& scriptSig1, const SignatureData& scriptSig2)
-{
-    SignatureData data;
-    data.MergeSignatureData(scriptSig1);
-    data.MergeSignatureData(scriptSig2);
-    ProduceSignature(DUMMY_SIGNING_PROVIDER, MutableTransactionSignatureCreator(tx, 0, txout.nValue, SIGHASH_DEFAULT), txout.scriptPubKey, data);
-    return data;
-}
 
 BOOST_AUTO_TEST_CASE(script_combineSigs)
 {
@@ -1179,102 +1169,6 @@ BOOST_AUTO_TEST_CASE(script_combineSigs)
     SignatureData scriptSig;
 
     SignatureData empty;
-    SignatureData combined = CombineSignatures(txFrom.vout[0], txTo, empty, empty);
-    BOOST_CHECK(combined.scriptSig.empty());
-
-    // Single signature case:
-    SignatureData dummy;
-    BOOST_CHECK(SignSignature(keystore, CTransaction(txFrom), txTo, 0, SIGHASH_ALL, dummy)); // changes scriptSig
-    scriptSig = DataFromTransaction(txTo, 0, txFrom.vout[0]);
-    combined = CombineSignatures(txFrom.vout[0], txTo, scriptSig, empty);
-    BOOST_CHECK(combined.scriptSig == scriptSig.scriptSig);
-    combined = CombineSignatures(txFrom.vout[0], txTo, empty, scriptSig);
-    BOOST_CHECK(combined.scriptSig == scriptSig.scriptSig);
-    SignatureData scriptSigCopy = scriptSig;
-    // Signing again will give a different, valid signature:
-    SignatureData dummy_b;
-    BOOST_CHECK(SignSignature(keystore, CTransaction(txFrom), txTo, 0, SIGHASH_ALL, dummy_b));
-    scriptSig = DataFromTransaction(txTo, 0, txFrom.vout[0]);
-    combined = CombineSignatures(txFrom.vout[0], txTo, scriptSigCopy, scriptSig);
-    BOOST_CHECK(combined.scriptSig == scriptSigCopy.scriptSig || combined.scriptSig == scriptSig.scriptSig);
-
-    // P2SH, single-signature case:
-    CScript pkSingle; pkSingle << ToByteVector(keys[0].GetPubKey()) << OP_CHECKSIG;
-    BOOST_CHECK(keystore.AddCScript(pkSingle));
-    scriptPubKey = GetScriptForDestination(ScriptHash(pkSingle));
-    SignatureData dummy_c;
-    BOOST_CHECK(SignSignature(keystore, CTransaction(txFrom), txTo, 0, SIGHASH_ALL, dummy_c));
-    scriptSig = DataFromTransaction(txTo, 0, txFrom.vout[0]);
-    combined = CombineSignatures(txFrom.vout[0], txTo, scriptSig, empty);
-    BOOST_CHECK(combined.scriptSig == scriptSig.scriptSig);
-    combined = CombineSignatures(txFrom.vout[0], txTo, empty, scriptSig);
-    BOOST_CHECK(combined.scriptSig == scriptSig.scriptSig);
-    scriptSigCopy = scriptSig;
-    SignatureData dummy_d;
-    BOOST_CHECK(SignSignature(keystore, CTransaction(txFrom), txTo, 0, SIGHASH_ALL, dummy_d));
-    scriptSig = DataFromTransaction(txTo, 0, txFrom.vout[0]);
-    combined = CombineSignatures(txFrom.vout[0], txTo, scriptSigCopy, scriptSig);
-    BOOST_CHECK(combined.scriptSig == scriptSigCopy.scriptSig || combined.scriptSig == scriptSig.scriptSig);
-
-    // Hardest case:  Multisig 2-of-3
-    scriptPubKey = GetScriptForMultisig(2, pubkeys);
-    BOOST_CHECK(keystore.AddCScript(scriptPubKey));
-    SignatureData dummy_e;
-    BOOST_CHECK(SignSignature(keystore, CTransaction(txFrom), txTo, 0, SIGHASH_ALL, dummy_e));
-    scriptSig = DataFromTransaction(txTo, 0, txFrom.vout[0]);
-    combined = CombineSignatures(txFrom.vout[0], txTo, scriptSig, empty);
-    BOOST_CHECK(combined.scriptSig == scriptSig.scriptSig);
-    combined = CombineSignatures(txFrom.vout[0], txTo, empty, scriptSig);
-    BOOST_CHECK(combined.scriptSig == scriptSig.scriptSig);
-
-    // A couple of partially-signed versions:
-    std::vector<unsigned char> sig1;
-    uint256 hash1 = SignatureHash(scriptPubKey, txTo, 0, SIGHASH_ALL, 0, SigVersion::BASE);
-    BOOST_CHECK(keys[0].Sign(hash1, sig1));
-    sig1.push_back(SIGHASH_ALL);
-    std::vector<unsigned char> sig2;
-    uint256 hash2 = SignatureHash(scriptPubKey, txTo, 0, SIGHASH_NONE, 0, SigVersion::BASE);
-    BOOST_CHECK(keys[1].Sign(hash2, sig2));
-    sig2.push_back(SIGHASH_NONE);
-    std::vector<unsigned char> sig3;
-    uint256 hash3 = SignatureHash(scriptPubKey, txTo, 0, SIGHASH_SINGLE, 0, SigVersion::BASE);
-    BOOST_CHECK(keys[2].Sign(hash3, sig3));
-    sig3.push_back(SIGHASH_SINGLE);
-
-    // Not fussy about order (or even existence) of placeholders or signatures:
-    CScript partial1a = CScript() << OP_0 << sig1 << OP_0;
-    CScript partial1b = CScript() << OP_0 << OP_0 << sig1;
-    CScript partial2a = CScript() << OP_0 << sig2;
-    CScript partial2b = CScript() << sig2 << OP_0;
-    CScript partial3a = CScript() << sig3;
-    CScript partial3b = CScript() << OP_0 << OP_0 << sig3;
-    CScript partial3c = CScript() << OP_0 << sig3 << OP_0;
-    CScript complete12 = CScript() << OP_0 << sig1 << sig2;
-    CScript complete13 = CScript() << OP_0 << sig1 << sig3;
-    CScript complete23 = CScript() << OP_0 << sig2 << sig3;
-    SignatureData partial1_sigs;
-    partial1_sigs.signatures.emplace(keys[0].GetPubKey().GetID(), SigPair(keys[0].GetPubKey(), sig1));
-    SignatureData partial2_sigs;
-    partial2_sigs.signatures.emplace(keys[1].GetPubKey().GetID(), SigPair(keys[1].GetPubKey(), sig2));
-    SignatureData partial3_sigs;
-    partial3_sigs.signatures.emplace(keys[2].GetPubKey().GetID(), SigPair(keys[2].GetPubKey(), sig3));
-
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial1_sigs, partial1_sigs);
-    BOOST_CHECK(combined.scriptSig == partial1a);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial1_sigs, partial2_sigs);
-    BOOST_CHECK(combined.scriptSig == complete12);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial2_sigs, partial1_sigs);
-    BOOST_CHECK(combined.scriptSig == complete12);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial1_sigs, partial2_sigs);
-    BOOST_CHECK(combined.scriptSig == complete12);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial3_sigs, partial1_sigs);
-    BOOST_CHECK(combined.scriptSig == complete13);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial2_sigs, partial3_sigs);
-    BOOST_CHECK(combined.scriptSig == complete23);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial3_sigs, partial2_sigs);
-    BOOST_CHECK(combined.scriptSig == complete23);
-    combined = CombineSignatures(txFrom.vout[0], txTo, partial3_sigs, partial3_sigs);
-    BOOST_CHECK(combined.scriptSig == partial3c);
 }
 
 BOOST_AUTO_TEST_CASE(script_standard_push)

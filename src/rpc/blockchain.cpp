@@ -32,7 +32,6 @@
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
-#include <script/descriptor.h>
 #include <streams.h>
 #include <sync.h>
 #include <txdb.h>
@@ -632,7 +631,7 @@ const RPCResult getblock_vin{
                     {RPCResult::Type::STR, "desc", "Inferred descriptor for the output"},
                     {RPCResult::Type::STR_HEX, "hex", "The raw public key script bytes, hex-encoded"},
                     {RPCResult::Type::STR, "address", /*optional=*/true, "The Bitcoin address (only if a well-defined address exists)"},
-                    {RPCResult::Type::STR, "type", "The type (one of: " + GetAllOutputTypes() + ")"},
+                    {RPCResult::Type::STR, "type", "The type."},
                 }},
             }},
         }},
@@ -2177,19 +2176,8 @@ static RPCHelpMan scantxoutset()
         }
 
         std::set<CScript> needles;
-        std::map<CScript, std::string> descriptors;
         CAmount total_in = 0;
 
-        // loop through the scan objects
-        for (const UniValue& scanobject : request.params[1].get_array().getValues()) {
-            FlatSigningProvider provider;
-            auto scripts = EvalDescriptorStringOrObject(scanobject, provider);
-            for (CScript& script : scripts) {
-                std::string inferred = InferDescriptor(script, provider)->ToString();
-                needles.emplace(script);
-                descriptors.emplace(std::move(script), std::move(inferred));
-            }
-        }
 
         // Scan the unspent transaction output set for inputs
         UniValue unspents(UniValue::VARR);
@@ -2225,7 +2213,6 @@ static RPCHelpMan scantxoutset()
             unspent.pushKV("txid", outpoint.hash.GetHex());
             unspent.pushKV("vout", (int32_t)outpoint.n);
             unspent.pushKV("scriptPubKey", HexStr(txo.scriptPubKey));
-            unspent.pushKV("desc", descriptors[txo.scriptPubKey]);
             unspent.pushKV("amount", ValueFromAmount(txo.nValue));
             unspent.pushKV("coinbase", coin.IsCoinBase());
             unspent.pushKV("height", (int32_t)coin.nHeight);
@@ -2365,123 +2352,6 @@ static RPCHelpMan scanblocks()
         }
         const std::string filtertype_name{request.params[4].isNull() ? "basic" : request.params[4].get_str()};
 
-        BlockFilterType filtertype;
-        if (!BlockFilterTypeByName(filtertype_name, filtertype)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unknown filtertype");
-        }
-
-        UniValue options{request.params[5].isNull() ? UniValue::VOBJ : request.params[5]};
-        bool filter_false_positives{options.exists("filter_false_positives") ? options["filter_false_positives"].get_bool() : false};
-
-        BlockFilterIndex* index = GetBlockFilterIndex(filtertype);
-        if (!index) {
-            throw JSONRPCError(RPC_MISC_ERROR, "Index is not enabled for filtertype " + filtertype_name);
-        }
-
-        NodeContext& node = EnsureAnyNodeContext(request.context);
-        ChainstateManager& chainman = EnsureChainman(node);
-
-        // set the start-height
-        const CBlockIndex* start_index = nullptr;
-        const CBlockIndex* stop_block = nullptr;
-        {
-            LOCK(cs_main);
-            CChain& active_chain = chainman.ActiveChain();
-            start_index = active_chain.Genesis();
-            stop_block = active_chain.Tip(); // If no stop block is provided, stop at the chain tip.
-            if (!request.params[2].isNull()) {
-                start_index = active_chain[request.params[2].getInt<int>()];
-                if (!start_index) {
-                    throw JSONRPCError(RPC_MISC_ERROR, "Invalid start_height");
-                }
-            }
-            if (!request.params[3].isNull()) {
-                stop_block = active_chain[request.params[3].getInt<int>()];
-                if (!stop_block || stop_block->nHeight < start_index->nHeight) {
-                    throw JSONRPCError(RPC_MISC_ERROR, "Invalid stop_height");
-                }
-            }
-        }
-        CHECK_NONFATAL(start_index);
-        CHECK_NONFATAL(stop_block);
-
-        // loop through the scan objects, add scripts to the needle_set
-        GCSFilter::ElementSet needle_set;
-        for (const UniValue& scanobject : request.params[1].get_array().getValues()) {
-            FlatSigningProvider provider;
-            std::vector<CScript> scripts = EvalDescriptorStringOrObject(scanobject, provider);
-            for (const CScript& script : scripts) {
-                needle_set.emplace(script.begin(), script.end());
-            }
-        }
-        UniValue blocks(UniValue::VARR);
-        const int amount_per_chunk = 10000;
-        std::vector<BlockFilter> filters;
-        int start_block_height = start_index->nHeight; // for progress reporting
-        const int total_blocks_to_process = stop_block->nHeight - start_block_height;
-
-        g_scanfilter_should_abort_scan = false;
-        g_scanfilter_progress = 0;
-        g_scanfilter_progress_height = start_block_height;
-        bool completed = true;
-
-        const CBlockIndex* end_range = nullptr;
-        do {
-            node.rpc_interruption_point(); // allow a clean shutdown
-            if (g_scanfilter_should_abort_scan) {
-                completed = false;
-                break;
-            }
-
-            // split the lookup range in chunks if we are deeper than 'amount_per_chunk' blocks from the stopping block
-            int start_block = !end_range ? start_index->nHeight : start_index->nHeight + 1; // to not include the previous round 'end_range' block
-            end_range = (start_block + amount_per_chunk < stop_block->nHeight) ?
-                    WITH_LOCK(::cs_main, return chainman.ActiveChain()[start_block + amount_per_chunk]) :
-                    stop_block;
-
-            if (index->LookupFilterRange(start_block, end_range, filters)) {
-                for (const BlockFilter& filter : filters) {
-                    // compare the elements-set with each filter
-                    if (filter.GetFilter().MatchAny(needle_set)) {
-                        if (filter_false_positives) {
-                            // Double check the filter matches by scanning the block
-                            const CBlockIndex& blockindex = *CHECK_NONFATAL(WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(filter.GetBlockHash())));
-
-                            if (!CheckBlockFilterMatches(chainman.m_blockman, blockindex, needle_set)) {
-                                continue;
-                            }
-                        }
-
-                        blocks.push_back(filter.GetBlockHash().GetHex());
-                    }
-                }
-            }
-            start_index = end_range;
-
-            // update progress
-            int blocks_processed = end_range->nHeight - start_block_height;
-            if (total_blocks_to_process > 0) { // avoid division by zero
-                g_scanfilter_progress = (int)(100.0 / total_blocks_to_process * blocks_processed);
-            } else {
-                g_scanfilter_progress = 100;
-            }
-            g_scanfilter_progress_height = end_range->nHeight;
-
-        // Finish if we reached the stop block
-        } while (start_index != stop_block);
-
-        ret.pushKV("from_height", start_block_height);
-        ret.pushKV("to_height", start_index->nHeight); // start_index is always the last scanned block here
-        ret.pushKV("relevant_blocks", blocks);
-        ret.pushKV("completed", completed);
-    }
-    else {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid action '%s'", request.params[0].get_str()));
-    }
-    return ret;
-},
-    };
-}
 
 static RPCHelpMan getblockfilter()
 {
@@ -2867,7 +2737,6 @@ void RegisterBlockchainRPCCommands(CRPCTable& t)
         {"blockchain", &verifychain},
         {"blockchain", &preciousblock},
         {"blockchain", &scantxoutset},
-        {"blockchain", &scanblocks},
         {"blockchain", &getblockfilter},
         {"blockchain", &dumptxoutset},
         {"blockchain", &loadtxoutset},

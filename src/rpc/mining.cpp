@@ -28,7 +28,6 @@
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
-#include <script/descriptor.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
 #include <txmempool.h>
@@ -175,78 +174,6 @@ static UniValue generateBlocks(ChainstateManager& chainman, const CTxMemPool& me
     return blockHashes;
 }
 
-static bool getScriptFromDescriptor(const std::string& descriptor, CScript& script, std::string& error)
-{
-    FlatSigningProvider key_provider;
-    const auto desc = Parse(descriptor, key_provider, error, /* require_checksum = */ false);
-    if (desc) {
-        if (desc->IsRange()) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Ranged descriptor not accepted. Maybe pass through deriveaddresses first?");
-        }
-
-        FlatSigningProvider provider;
-        std::vector<CScript> scripts;
-        if (!desc->Expand(0, key_provider, scripts, provider)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot derive script without private keys");
-        }
-
-        // Combo descriptors can have 2 or 4 scripts, so we can't just check scripts.size() == 1
-        CHECK_NONFATAL(scripts.size() > 0 && scripts.size() <= 4);
-
-        if (scripts.size() == 1) {
-            script = scripts.at(0);
-        } else if (scripts.size() == 4) {
-            // For uncompressed keys, take the 3rd script, since it is p2wpkh
-            script = scripts.at(2);
-        } else {
-            // Else take the 2nd script, since it is p2pkh
-            script = scripts.at(1);
-        }
-
-        return true;
-    } else {
-        return false;
-    }
-}
-
-static RPCHelpMan generatetodescriptor()
-{
-    return RPCHelpMan{
-        "generatetodescriptor",
-        "Mine to a specified descriptor and return the block hashes.",
-        {
-            {"num_blocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated."},
-            {"descriptor", RPCArg::Type::STR, RPCArg::Optional::NO, "The descriptor to send the newly generated bitcoin to."},
-            {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
-        },
-        RPCResult{
-            RPCResult::Type::ARR, "", "hashes of blocks generated",
-            {
-                {RPCResult::Type::STR_HEX, "", "blockhash"},
-            }
-        },
-        RPCExamples{
-            "\nGenerate 11 blocks to mydesc\n" + HelpExampleCli("generatetodescriptor", "11 \"mydesc\"")},
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    const auto num_blocks{self.Arg<int>(0)};
-    const auto max_tries{self.Arg<uint64_t>(2)};
-
-    CScript coinbase_script;
-    std::string error;
-    if (!getScriptFromDescriptor(self.Arg<std::string>(1), coinbase_script, error)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
-    }
-
-    NodeContext& node = EnsureAnyNodeContext(request.context);
-    const CTxMemPool& mempool = EnsureMemPool(node);
-    ChainstateManager& chainman = EnsureChainman(node);
-
-    return generateBlocks(chainman, mempool, coinbase_script, num_blocks, max_tries);
-},
-    };
-}
-
 static RPCHelpMan generate()
 {
     return RPCHelpMan{"generate", "has been replaced by the -generate cli option. Refer to -help for more information.", {}, {}, RPCExamples{""}, [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
@@ -327,14 +254,12 @@ static RPCHelpMan generateblock()
     CScript coinbase_script;
     std::string error;
 
-    if (!getScriptFromDescriptor(address_or_descriptor, coinbase_script, error)) {
-        const auto destination = DecodeDestination(address_or_descriptor);
-        if (!IsValidDestination(destination)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address or descriptor");
-        }
-
-        coinbase_script = GetScriptForDestination(destination);
+    const auto destination = DecodeDestination(address_or_descriptor);
+    if (!IsValidDestination(destination)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address or descriptor");
     }
+
+    coinbase_script = GetScriptForDestination(destination);
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
     const CTxMemPool& mempool = EnsureMemPool(node);
@@ -1107,7 +1032,6 @@ void RegisterMiningRPCCommands(CRPCTable& t)
         {"mining", &submitheader},
 
         {"hidden", &generatetoaddress},
-        {"hidden", &generatetodescriptor},
         {"hidden", &generateblock},
         {"hidden", &generate},
     };

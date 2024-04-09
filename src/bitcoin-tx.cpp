@@ -19,7 +19,6 @@
 #include <policy/policy.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <univalue.h>
 #include <util/exception.h>
@@ -574,9 +573,6 @@ static std::vector<unsigned char> ParseHexUV(const UniValue& v, const std::strin
     return ParseHex(strHex);
 }
 
-static void MutateTxSign(CMutableTransaction& tx, const std::string& flagStr)
-{
-    int nHashType = SIGHASH_ALL;
 
     if (flagStr.size() > 0)
         if (!findSighashFlags(nHashType, flagStr))
@@ -737,11 +733,6 @@ static void MutateTx(CMutableTransaction& tx, const std::string& command,
         MutateTxAddOutScript(tx, commandVal);
     else if (command == "outdata")
         MutateTxAddOutData(tx, commandVal);
-
-    else if (command == "sign") {
-        ecc.reset(new Secp256k1Init());
-        MutateTxSign(tx, commandVal);
-    }
 
     else if (command == "load")
         RegisterLoad(commandVal);

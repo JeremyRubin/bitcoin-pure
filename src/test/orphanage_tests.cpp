@@ -5,7 +5,6 @@
 #include <arith_uint256.h>
 #include <primitives/transaction.h>
 #include <pubkey.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>

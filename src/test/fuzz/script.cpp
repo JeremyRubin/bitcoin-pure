@@ -10,11 +10,9 @@
 #include <policy/policy.h>
 #include <pubkey.h>
 #include <rpc/util.h>
-#include <script/descriptor.h>
 #include <script/interpreter.h>
 #include <script/script.h>
 #include <script/script_error.h>
-#include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <streams.h>

@@ -9,8 +9,8 @@
 #include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <key_io.h>
-#include <script/descriptor.h>
 #include <script/script.h>
+#include <script/interpreter.h>
 #include <script/solver.h>
 #include <serialize.h>
 #include <streams.h>
@@ -152,9 +152,6 @@ void ScriptToUniv(const CScript& script, UniValue& out, bool include_hex, bool i
     CTxDestination address;
 
     out.pushKV("asm", ScriptToAsmStr(script));
-    if (include_address) {
-        out.pushKV("desc", InferDescriptor(script, provider ? *provider : DUMMY_SIGNING_PROVIDER)->ToString());
-    }
     if (include_hex) {
         out.pushKV("hex", HexStr(script));
     }

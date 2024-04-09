@@ -14,9 +14,6 @@
 #include <key_io.h>
 #include <outputtype.h>
 #include <rpc/util.h>
-#include <script/descriptor.h>
-#include <script/signingprovider.h>
-#include <script/solver.h>
 #include <tinyformat.h>
 #include <util/check.h>
 #include <util/result.h>
@@ -29,16 +26,6 @@
 
 const std::string UNIX_EPOCH_TIME = "UNIX epoch time";
 const std::string EXAMPLE_ADDRESS[2] = {"bc1q09vm5lfy0j5reeulh4x5752q25uqqvz34hufdl", "bc1q02ad21edsxd23d32dfgqqsz4vv4nmtfzuklhy3"};
-
-std::string GetAllOutputTypes()
-{
-    std::vector<std::string> ret;
-    using U = std::underlying_type<TxoutType>::type;
-    for (U i = (U)TxoutType::NONSTANDARD; i <= (U)TxoutType::WITNESS_UNKNOWN; ++i) {
-        ret.emplace_back(GetTxnOutputType(static_cast<TxoutType>(i)));
-    }
-    return Join(ret, ", ");
-}
 
 void RPCTypeCheckObj(const UniValue& o,
     const std::map<std::string, UniValueType>& typesExpected,
@@ -219,40 +206,6 @@ CPubKey AddrToPubKey(const FillableSigningProvider& keystore, const std::string&
        throw JSONRPCError(RPC_INTERNAL_ERROR, "Wallet contains an invalid public key");
     }
     return vchPubKey;
-}
-
-// Creates a multisig address from a given list of public keys, number of signatures required, and the address type
-CTxDestination AddAndGetMultisigDestination(const int required, const std::vector<CPubKey>& pubkeys, OutputType type, FillableSigningProvider& keystore, CScript& script_out)
-{
-    // Gather public keys
-    if (required < 1) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "a multisignature address must require at least one key to redeem");
-    }
-    if ((int)pubkeys.size() < required) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("not enough keys supplied (got %u keys, but need at least %d to redeem)", pubkeys.size(), required));
-    }
-    if (pubkeys.size() > MAX_PUBKEYS_PER_MULTISIG) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Number of keys involved in the multisignature address creation > %d\nReduce the number", MAX_PUBKEYS_PER_MULTISIG));
-    }
-
-    script_out = GetScriptForMultisig(required, pubkeys);
-
-    // Check if any keys are uncompressed. If so, the type is legacy
-    for (const CPubKey& pk : pubkeys) {
-        if (!pk.IsCompressed()) {
-            type = OutputType::LEGACY;
-            break;
-        }
-    }
-
-    if (type == OutputType::LEGACY && script_out.size() > MAX_SCRIPT_ELEMENT_SIZE) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, (strprintf("redeemScript exceeds size limit: %d > %d", script_out.size(), MAX_SCRIPT_ELEMENT_SIZE)));
-    }
-
-    // Make the address
-    CTxDestination dest = AddAndGetDestinationForScript(keystore, script_out, type);
-
-    return dest;
 }
 
 class DescribeAddressVisitor
@@ -1276,46 +1229,6 @@ std::pair<int64_t, int64_t> ParseDescriptorRange(const UniValue& value)
     return {low, high};
 }
 
-std::vector<CScript> EvalDescriptorStringOrObject(const UniValue& scanobject, FlatSigningProvider& provider, const bool expand_priv)
-{
-    std::string desc_str;
-    std::pair<int64_t, int64_t> range = {0, 1000};
-    if (scanobject.isStr()) {
-        desc_str = scanobject.get_str();
-    } else if (scanobject.isObject()) {
-        const UniValue& desc_uni{scanobject.find_value("desc")};
-        if (desc_uni.isNull()) throw JSONRPCError(RPC_INVALID_PARAMETER, "Descriptor needs to be provided in scan object");
-        desc_str = desc_uni.get_str();
-        const UniValue& range_uni{scanobject.find_value("range")};
-        if (!range_uni.isNull()) {
-            range = ParseDescriptorRange(range_uni);
-        }
-    } else {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Scan object needs to be either a string or an object");
-    }
-
-    std::string error;
-    auto desc = Parse(desc_str, provider, error);
-    if (!desc) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
-    }
-    if (!desc->IsRange()) {
-        range.first = 0;
-        range.second = 0;
-    }
-    std::vector<CScript> ret;
-    for (int i = range.first; i <= range.second; ++i) {
-        std::vector<CScript> scripts;
-        if (!desc->Expand(i, provider, scripts, provider)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Cannot derive script without private keys: '%s'", desc_str));
-        }
-        if (expand_priv) {
-            desc->ExpandPrivate(/*pos=*/i, provider, /*out=*/provider);
-        }
-        std::move(scripts.begin(), scripts.end(), std::back_inserter(ret));
-    }
-    return ret;
-}
 
 /** Convert a vector of bilingual strings to a UniValue::VARR containing their original untranslated values. */
 [[nodiscard]] static UniValue BilingualStringsToUniValue(const std::vector<bilingual_str>& bilingual_strings)
