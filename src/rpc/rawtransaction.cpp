@@ -14,13 +14,11 @@
 #include <node/blockstorage.h>
 #include <node/coin.h>
 #include <node/context.h>
-#include <node/psbt.h>
 #include <node/transaction.h>
 #include <policy/packages.h>
 #include <policy/policy.h>
 #include <policy/rbf.h>
 #include <primitives/transaction.h>
-#include <psbt.h>
 #include <random.h>
 #include <rpc/blockchain.h>
 #include <rpc/rawtransaction_util.h>
@@ -46,11 +44,9 @@
 
 #include <univalue.h>
 
-using node::AnalyzePSBT;
 using node::FindCoins;
 using node::GetTransaction;
 using node::NodeContext;
-using node::PSBTAnalysis;
 
 static void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry,
                      Chainstate& active_chainstate, const CTxUndo* txundo = nullptr,
@@ -171,92 +167,6 @@ static std::vector<RPCArg> CreateTxDoc()
     };
 }
 
-// Update PSBT with information from the mempool, the UTXO set, the txindex, and the provided descriptors.
-// Optionally, sign the inputs that we can using information from the descriptors.
-PartiallySignedTransaction ProcessPSBT(const std::string& psbt_string, const std::any& context, const HidingSigningProvider& provider, int sighash_type, bool finalize)
-{
-    // Unserialize the transactions
-    PartiallySignedTransaction psbtx;
-    std::string error;
-    if (!DecodeBase64PSBT(psbtx, psbt_string, error)) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
-    }
-
-    if (g_txindex) g_txindex->BlockUntilSyncedToCurrentChain();
-    const NodeContext& node = EnsureAnyNodeContext(context);
-
-    // If we can't find the corresponding full transaction for all of our inputs,
-    // this will be used to find just the utxos for the segwit inputs for which
-    // the full transaction isn't found
-    std::map<COutPoint, Coin> coins;
-
-    // Fetch previous transactions:
-    // First, look in the txindex and the mempool
-    for (unsigned int i = 0; i < psbtx.tx->vin.size(); ++i) {
-        PSBTInput& psbt_input = psbtx.inputs.at(i);
-        const CTxIn& tx_in = psbtx.tx->vin.at(i);
-
-        // The `non_witness_utxo` is the whole previous transaction
-        if (psbt_input.non_witness_utxo) continue;
-
-        CTransactionRef tx;
-
-        // Look in the txindex
-        if (g_txindex) {
-            uint256 block_hash;
-            g_txindex->FindTx(tx_in.prevout.hash, block_hash, tx);
-        }
-        // If we still don't have it look in the mempool
-        if (!tx) {
-            tx = node.mempool->get(tx_in.prevout.hash);
-        }
-        if (tx) {
-            psbt_input.non_witness_utxo = tx;
-        } else {
-            coins[tx_in.prevout]; // Create empty map entry keyed by prevout
-        }
-    }
-
-    // If we still haven't found all of the inputs, look for the missing ones in the utxo set
-    if (!coins.empty()) {
-        FindCoins(node, coins);
-        for (unsigned int i = 0; i < psbtx.tx->vin.size(); ++i) {
-            PSBTInput& input = psbtx.inputs.at(i);
-
-            // If there are still missing utxos, add them if they were found in the utxo set
-            if (!input.non_witness_utxo) {
-                const CTxIn& tx_in = psbtx.tx->vin.at(i);
-                const Coin& coin = coins.at(tx_in.prevout);
-                if (!coin.out.IsNull() && IsSegWitOutput(provider, coin.out.scriptPubKey)) {
-                    input.witness_utxo = coin.out;
-                }
-            }
-        }
-    }
-
-    const PrecomputedTransactionData& txdata = PrecomputePSBTData(psbtx);
-
-    for (unsigned int i = 0; i < psbtx.tx->vin.size(); ++i) {
-        if (PSBTInputSigned(psbtx.inputs.at(i))) {
-            continue;
-        }
-
-        // Update script/keypath information using descriptor data.
-        // Note that SignPSBTInput does a lot more than just constructing ECDSA signatures.
-        // We only actually care about those if our signing provider doesn't hide private
-        // information, as is the case with `descriptorprocesspsbt`
-        SignPSBTInput(provider, psbtx, /*index=*/i, &txdata, sighash_type, /*out_sigdata=*/nullptr, finalize);
-    }
-
-    // Update script/keypath information using descriptor data.
-    for (unsigned int i = 0; i < psbtx.tx->vout.size(); ++i) {
-        UpdatePSBTOutput(provider, psbtx, i);
-    }
-
-    RemoveUnnecessaryTransactions(psbtx, /*sighash_type=*/1);
-
-    return psbtx;
-}
 
 static RPCHelpMan getrawtransaction()
 {
@@ -814,301 +724,15 @@ static RPCHelpMan signrawtransactionwithkey()
     };
 }
 
-const RPCResult decodepsbt_inputs{
-    RPCResult::Type::ARR, "inputs", "",
-    {
-        {RPCResult::Type::OBJ, "", "",
-        {
-            {RPCResult::Type::OBJ, "non_witness_utxo", /*optional=*/true, "Decoded network transaction for non-witness UTXOs",
-            {
-                {RPCResult::Type::ELISION, "",""},
-            }},
-            {RPCResult::Type::OBJ, "witness_utxo", /*optional=*/true, "Transaction output for witness UTXOs",
-            {
-                {RPCResult::Type::NUM, "amount", "The value in " + CURRENCY_UNIT},
-                {RPCResult::Type::OBJ, "scriptPubKey", "",
-                {
-                    {RPCResult::Type::STR, "asm", "Disassembly of the public key script"},
-                    {RPCResult::Type::STR, "desc", "Inferred descriptor for the output"},
-                    {RPCResult::Type::STR_HEX, "hex", "The raw public key script bytes, hex-encoded"},
-                    {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
-                    {RPCResult::Type::STR, "address", /*optional=*/true, "The Bitcoin address (only if a well-defined address exists)"},
-                }},
-            }},
-            {RPCResult::Type::OBJ_DYN, "partial_signatures", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR, "pubkey", "The public key and signature that corresponds to it."},
-            }},
-            {RPCResult::Type::STR, "sighash", /*optional=*/true, "The sighash type to be used"},
-            {RPCResult::Type::OBJ, "redeem_script", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR, "asm", "Disassembly of the redeem script"},
-                {RPCResult::Type::STR_HEX, "hex", "The raw redeem script bytes, hex-encoded"},
-                {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
-            }},
-            {RPCResult::Type::OBJ, "witness_script", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR, "asm", "Disassembly of the witness script"},
-                {RPCResult::Type::STR_HEX, "hex", "The raw witness script bytes, hex-encoded"},
-                {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
-            }},
-            {RPCResult::Type::ARR, "bip32_derivs", /*optional=*/true, "",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR, "pubkey", "The public key with the derivation path as the value."},
-                    {RPCResult::Type::STR, "master_fingerprint", "The fingerprint of the master key"},
-                    {RPCResult::Type::STR, "path", "The path"},
-                }},
-            }},
-            {RPCResult::Type::OBJ, "final_scriptSig", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR, "asm", "Disassembly of the final signature script"},
-                {RPCResult::Type::STR_HEX, "hex", "The raw final signature script bytes, hex-encoded"},
-            }},
-            {RPCResult::Type::ARR, "final_scriptwitness", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR_HEX, "", "hex-encoded witness data (if any)"},
-            }},
-            {RPCResult::Type::OBJ_DYN, "ripemd160_preimages", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::STR, "hash", "The hash and preimage that corresponds to it."},
-            }},
-            {RPCResult::Type::OBJ_DYN, "sha256_preimages", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::STR, "hash", "The hash and preimage that corresponds to it."},
-            }},
-            {RPCResult::Type::OBJ_DYN, "hash160_preimages", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::STR, "hash", "The hash and preimage that corresponds to it."},
-            }},
-            {RPCResult::Type::OBJ_DYN, "hash256_preimages", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::STR, "hash", "The hash and preimage that corresponds to it."},
-            }},
-            {RPCResult::Type::STR_HEX, "taproot_key_path_sig", /*optional=*/ true, "hex-encoded signature for the Taproot key path spend"},
-            {RPCResult::Type::ARR, "taproot_script_path_sigs", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::OBJ, "signature", /*optional=*/ true, "The signature for the pubkey and leaf hash combination",
-                {
-                    {RPCResult::Type::STR, "pubkey", "The x-only pubkey for this signature"},
-                    {RPCResult::Type::STR, "leaf_hash", "The leaf hash for this signature"},
-                    {RPCResult::Type::STR, "sig", "The signature itself"},
-                }},
-            }},
-            {RPCResult::Type::ARR, "taproot_scripts", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR_HEX, "script", "A leaf script"},
-                    {RPCResult::Type::NUM, "leaf_ver", "The version number for the leaf script"},
-                    {RPCResult::Type::ARR, "control_blocks", "The control blocks for this script",
-                    {
-                        {RPCResult::Type::STR_HEX, "control_block", "A hex-encoded control block for this script"},
-                    }},
-                }},
-            }},
-            {RPCResult::Type::ARR, "taproot_bip32_derivs", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR, "pubkey", "The x-only public key this path corresponds to"},
-                    {RPCResult::Type::STR, "master_fingerprint", "The fingerprint of the master key"},
-                    {RPCResult::Type::STR, "path", "The path"},
-                    {RPCResult::Type::ARR, "leaf_hashes", "The hashes of the leaves this pubkey appears in",
-                    {
-                        {RPCResult::Type::STR_HEX, "hash", "The hash of a leaf this pubkey appears in"},
-                    }},
-                }},
-            }},
-            {RPCResult::Type::STR_HEX, "taproot_internal_key", /*optional=*/ true, "The hex-encoded Taproot x-only internal key"},
-            {RPCResult::Type::STR_HEX, "taproot_merkle_root", /*optional=*/ true, "The hex-encoded Taproot merkle root"},
-            {RPCResult::Type::OBJ_DYN, "unknown", /*optional=*/ true, "The unknown input fields",
-            {
-                {RPCResult::Type::STR_HEX, "key", "(key-value pair) An unknown key-value pair"},
-            }},
-            {RPCResult::Type::ARR, "proprietary", /*optional=*/true, "The input proprietary map",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR_HEX, "identifier", "The hex string for the proprietary identifier"},
-                    {RPCResult::Type::NUM, "subtype", "The number for the subtype"},
-                    {RPCResult::Type::STR_HEX, "key", "The hex for the key"},
-                    {RPCResult::Type::STR_HEX, "value", "The hex for the value"},
-                }},
-            }},
-        }},
-    }
-};
 
-const RPCResult decodepsbt_outputs{
-    RPCResult::Type::ARR, "outputs", "",
-    {
-        {RPCResult::Type::OBJ, "", "",
-        {
-            {RPCResult::Type::OBJ, "redeem_script", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR, "asm", "Disassembly of the redeem script"},
-                {RPCResult::Type::STR_HEX, "hex", "The raw redeem script bytes, hex-encoded"},
-                {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
-            }},
-            {RPCResult::Type::OBJ, "witness_script", /*optional=*/true, "",
-            {
-                {RPCResult::Type::STR, "asm", "Disassembly of the witness script"},
-                {RPCResult::Type::STR_HEX, "hex", "The raw witness script bytes, hex-encoded"},
-                {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
-            }},
-            {RPCResult::Type::ARR, "bip32_derivs", /*optional=*/true, "",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR, "pubkey", "The public key this path corresponds to"},
-                    {RPCResult::Type::STR, "master_fingerprint", "The fingerprint of the master key"},
-                    {RPCResult::Type::STR, "path", "The path"},
-                }},
-            }},
-            {RPCResult::Type::STR_HEX, "taproot_internal_key", /*optional=*/ true, "The hex-encoded Taproot x-only internal key"},
-            {RPCResult::Type::ARR, "taproot_tree", /*optional=*/ true, "The tuples that make up the Taproot tree, in depth first search order",
-            {
-                {RPCResult::Type::OBJ, "tuple", /*optional=*/ true, "A single leaf script in the taproot tree",
-                {
-                    {RPCResult::Type::NUM, "depth", "The depth of this element in the tree"},
-                    {RPCResult::Type::NUM, "leaf_ver", "The version of this leaf"},
-                    {RPCResult::Type::STR, "script", "The hex-encoded script itself"},
-                }},
-            }},
-            {RPCResult::Type::ARR, "taproot_bip32_derivs", /*optional=*/ true, "",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR, "pubkey", "The x-only public key this path corresponds to"},
-                    {RPCResult::Type::STR, "master_fingerprint", "The fingerprint of the master key"},
-                    {RPCResult::Type::STR, "path", "The path"},
-                    {RPCResult::Type::ARR, "leaf_hashes", "The hashes of the leaves this pubkey appears in",
-                    {
-                        {RPCResult::Type::STR_HEX, "hash", "The hash of a leaf this pubkey appears in"},
-                    }},
-                }},
-            }},
-            {RPCResult::Type::OBJ_DYN, "unknown", /*optional=*/true, "The unknown output fields",
-            {
-                {RPCResult::Type::STR_HEX, "key", "(key-value pair) An unknown key-value pair"},
-            }},
-            {RPCResult::Type::ARR, "proprietary", /*optional=*/true, "The output proprietary map",
-            {
-                {RPCResult::Type::OBJ, "", "",
-                {
-                    {RPCResult::Type::STR_HEX, "identifier", "The hex string for the proprietary identifier"},
-                    {RPCResult::Type::NUM, "subtype", "The number for the subtype"},
-                    {RPCResult::Type::STR_HEX, "key", "The hex for the key"},
-                    {RPCResult::Type::STR_HEX, "value", "The hex for the value"},
-                }},
-            }},
-        }},
-    }
-};
 
-static RPCHelpMan decodepsbt()
-{
-    return RPCHelpMan{
-        "decodepsbt",
-        "Return a JSON object representing the serialized, base64-encoded partially signed Bitcoin transaction.",
-                {
-                    {"psbt", RPCArg::Type::STR, RPCArg::Optional::NO, "The PSBT base64 string"},
-                },
-                RPCResult{
-                    RPCResult::Type::OBJ, "", "",
-                    {
-                        {RPCResult::Type::OBJ, "tx", "The decoded network-serialized unsigned transaction.",
-                        {
-                            {RPCResult::Type::ELISION, "", "The layout is the same as the output of decoderawtransaction."},
-                        }},
-                        {RPCResult::Type::ARR, "global_xpubs", "",
-                        {
-                            {RPCResult::Type::OBJ, "", "",
-                            {
-                                {RPCResult::Type::STR, "xpub", "The extended public key this path corresponds to"},
-                                {RPCResult::Type::STR_HEX, "master_fingerprint", "The fingerprint of the master key"},
-                                {RPCResult::Type::STR, "path", "The path"},
-                            }},
-                        }},
-                        {RPCResult::Type::NUM, "psbt_version", "The PSBT version number. Not to be confused with the unsigned transaction version"},
-                        {RPCResult::Type::ARR, "proprietary", "The global proprietary map",
-                        {
-                            {RPCResult::Type::OBJ, "", "",
-                            {
-                                {RPCResult::Type::STR_HEX, "identifier", "The hex string for the proprietary identifier"},
-                                {RPCResult::Type::NUM, "subtype", "The number for the subtype"},
-                                {RPCResult::Type::STR_HEX, "key", "The hex for the key"},
-                                {RPCResult::Type::STR_HEX, "value", "The hex for the value"},
-                            }},
-                        }},
-                        {RPCResult::Type::OBJ_DYN, "unknown", "The unknown global fields",
-                        {
-                             {RPCResult::Type::STR_HEX, "key", "(key-value pair) An unknown key-value pair"},
-                        }},
-                        decodepsbt_inputs,
-                        decodepsbt_outputs,
-                        {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The transaction fee paid if all UTXOs slots in the PSBT have been filled."},
-                    }
-                },
-                RPCExamples{
-                    HelpExampleCli("decodepsbt", "\"psbt\"")
-                },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    // Unserialize the transactions
-    PartiallySignedTransaction psbtx;
-    std::string error;
-    if (!DecodeBase64PSBT(psbtx, request.params[0].get_str(), error)) {
-        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("TX decode failed %s", error));
-    }
 
-    UniValue result(UniValue::VOBJ);
 
-    // Add the decoded tx
-    UniValue tx_univ(UniValue::VOBJ);
-    TxToUniv(CTransaction(*psbtx.tx), /*block_hash=*/uint256(), /*entry=*/tx_univ, /*include_hex=*/false);
-    result.pushKV("tx", tx_univ);
 
-    // Add the global xpubs
-    UniValue global_xpubs(UniValue::VARR);
-    for (std::pair<KeyOriginInfo, std::set<CExtPubKey>> xpub_pair : psbtx.m_xpubs) {
-        for (auto& xpub : xpub_pair.second) {
-            std::vector<unsigned char> ser_xpub;
-            ser_xpub.assign(BIP32_EXTKEY_WITH_VERSION_SIZE, 0);
-            xpub.EncodeWithVersion(ser_xpub.data());
 
-            UniValue keypath(UniValue::VOBJ);
-            keypath.pushKV("xpub", EncodeBase58Check(ser_xpub));
-            keypath.pushKV("master_fingerprint", HexStr(Span<unsigned char>(xpub_pair.first.fingerprint, xpub_pair.first.fingerprint + 4)));
-            keypath.pushKV("path", WriteHDKeypath(xpub_pair.first.path));
-            global_xpubs.push_back(keypath);
-        }
-    }
-    result.pushKV("global_xpubs", global_xpubs);
 
-    // PSBT version
-    result.pushKV("psbt_version", static_cast<uint64_t>(psbtx.GetVersion()));
 
-    // Proprietary
-    UniValue proprietary(UniValue::VARR);
-    for (const auto& entry : psbtx.m_proprietary) {
-        UniValue this_prop(UniValue::VOBJ);
-        this_prop.pushKV("identifier", HexStr(entry.identifier));
-        this_prop.pushKV("subtype", entry.subtype);
-        this_prop.pushKV("key", HexStr(entry.key));
-        this_prop.pushKV("value", HexStr(entry.value));
-        proprietary.push_back(this_prop);
-    }
-    result.pushKV("proprietary", proprietary);
 
-    // Unknown data
-    UniValue unknowns(UniValue::VOBJ);
-    for (auto entry : psbtx.unknown) {
-        unknowns.pushKV(HexStr(entry.first), HexStr(entry.second));
-    }
-    result.pushKV("unknown", unknowns);
 
     // inputs
     CAmount total_in = 0;
@@ -2010,15 +1634,6 @@ void RegisterRawTransactionRPCCommands(CRPCTable& t)
         {"rawtransactions", &decodescript},
         {"rawtransactions", &combinerawtransaction},
         {"rawtransactions", &signrawtransactionwithkey},
-        {"rawtransactions", &decodepsbt},
-        {"rawtransactions", &combinepsbt},
-        {"rawtransactions", &finalizepsbt},
-        {"rawtransactions", &createpsbt},
-        {"rawtransactions", &converttopsbt},
-        {"rawtransactions", &utxoupdatepsbt},
-        {"rawtransactions", &descriptorprocesspsbt},
-        {"rawtransactions", &joinpsbts},
-        {"rawtransactions", &analyzepsbt},
     };
     for (const auto& c : commands) {
         t.appendCommand(c.name, &c);

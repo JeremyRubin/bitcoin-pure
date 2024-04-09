@@ -7,7 +7,6 @@
 #include <chainparams.h>
 #include <common/run_command.h>
 #include <core_io.h>
-#include <psbt.h>
 #include <util/strencodings.h>
 
 #include <algorithm>
