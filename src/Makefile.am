@@ -43,10 +43,6 @@ endif
 if BUILD_BITCOIN_KERNEL_LIB
 LIBBITCOINKERNEL=libbitcoinkernel.la
 endif
-if ENABLE_WALLET
-LIBBITCOIN_WALLET=libbitcoin_wallet.a
-LIBBITCOIN_WALLET_TOOL=libbitcoin_wallet_tool.a
-endif
 
 LIBBITCOIN_CRYPTO = $(LIBBITCOIN_CRYPTO_BASE)
 if ENABLE_SSE41
@@ -99,11 +95,6 @@ if BUILD_BITCOIN_TX
   bin_PROGRAMS += bitcoin-tx
 endif
 
-if ENABLE_WALLET
-if BUILD_BITCOIN_WALLET
-  bin_PROGRAMS += bitcoin-wallet
-endif
-endif
 
 if BUILD_BITCOIN_UTIL
   bin_PROGRAMS += bitcoin-util
@@ -334,30 +325,6 @@ BITCOIN_CORE_H = \
   validation.h \
   validationinterface.h \
   versionbits.h \
-  wallet/bdb.h \
-  wallet/coincontrol.h \
-  wallet/coinselection.h \
-  wallet/context.h \
-  wallet/crypter.h \
-  wallet/db.h \
-  wallet/dump.h \
-  wallet/external_signer_scriptpubkeyman.h \
-  wallet/feebumper.h \
-  wallet/fees.h \
-  wallet/load.h \
-  wallet/receive.h \
-  wallet/rpc/util.h \
-  wallet/rpc/wallet.h \
-  wallet/salvage.h \
-  wallet/scriptpubkeyman.h \
-  wallet/spend.h \
-  wallet/sqlite.h \
-  wallet/transaction.h \
-  wallet/types.h \
-  wallet/wallet.h \
-  wallet/walletdb.h \
-  wallet/wallettool.h \
-  wallet/walletutil.h \
   walletinitinterface.h \
   warnings.h \
   zmq/zmqabstractnotifier.h \
@@ -468,10 +435,6 @@ libbitcoin_node_a_SOURCES = \
   versionbits.cpp \
   $(BITCOIN_CORE_H)
 
-if ENABLE_WALLET
-libbitcoin_node_a_SOURCES += wallet/init.cpp
-libbitcoin_node_a_CPPFLAGS += $(BDB_CPPFLAGS)
-endif
 if !ENABLE_WALLET
 libbitcoin_node_a_SOURCES += dummywallet.cpp
 endif
@@ -490,54 +453,10 @@ libbitcoin_zmq_a_SOURCES = \
 endif
 #
 
-# wallet #
-libbitcoin_wallet_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS) $(BDB_CPPFLAGS) $(SQLITE_CFLAGS)
-libbitcoin_wallet_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-libbitcoin_wallet_a_SOURCES = \
-  wallet/coincontrol.cpp \
-  wallet/context.cpp \
-  wallet/crypter.cpp \
-  wallet/db.cpp \
-  wallet/dump.cpp \
-  wallet/external_signer_scriptpubkeyman.cpp \
-  wallet/feebumper.cpp \
-  wallet/fees.cpp \
-  wallet/interfaces.cpp \
-  wallet/load.cpp \
-  wallet/receive.cpp \
-  wallet/rpc/addresses.cpp \
-  wallet/rpc/backup.cpp \
-  wallet/rpc/coins.cpp \
-  wallet/rpc/encrypt.cpp \
-  wallet/rpc/spend.cpp \
-  wallet/rpc/signmessage.cpp \
-  wallet/rpc/transactions.cpp \
-  wallet/rpc/util.cpp \
-  wallet/rpc/wallet.cpp \
-  wallet/scriptpubkeyman.cpp \
-  wallet/spend.cpp \
-  wallet/transaction.cpp \
-  wallet/wallet.cpp \
-  wallet/walletdb.cpp \
-  wallet/walletutil.cpp \
-  wallet/coinselection.cpp \
-  $(BITCOIN_CORE_H)
-
-if USE_SQLITE
-libbitcoin_wallet_a_SOURCES += wallet/sqlite.cpp
-endif
-if USE_BDB
-libbitcoin_wallet_a_SOURCES += wallet/bdb.cpp wallet/salvage.cpp
-endif
-#
 
 # wallet tool #
 libbitcoin_wallet_tool_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS)
 libbitcoin_wallet_tool_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-libbitcoin_wallet_tool_a_SOURCES = \
-  wallet/wallettool.cpp \
-  $(BITCOIN_CORE_H)
-#
 
 # crypto #
 crypto_libbitcoin_crypto_base_la_CPPFLAGS = $(AM_CPPFLAGS)
@@ -846,27 +765,7 @@ bitcoin_tx_LDADD = \
   $(LIBSECP256K1)
 #
 
-# bitcoin-wallet binary #
-bitcoin_wallet_SOURCES = bitcoin-wallet.cpp
-bitcoin_wallet_SOURCES += init/bitcoin-wallet.cpp
-bitcoin_wallet_CPPFLAGS = $(bitcoin_bin_cppflags)
-bitcoin_wallet_CXXFLAGS = $(bitcoin_bin_cxxflags)
-bitcoin_wallet_LDFLAGS = $(bitcoin_bin_ldflags)
-bitcoin_wallet_LDADD = \
-  $(LIBBITCOIN_WALLET_TOOL) \
-  $(LIBBITCOIN_WALLET) \
-  $(LIBBITCOIN_COMMON) \
-  $(LIBBITCOIN_UTIL) \
-  $(LIBUNIVALUE) \
-  $(LIBBITCOIN_CONSENSUS) \
-  $(LIBBITCOIN_CRYPTO) \
-  $(LIBSECP256K1) \
-  $(BDB_LIBS) \
-  $(SQLITE_LIBS)
 
-if TARGET_WINDOWS
-bitcoin_wallet_SOURCES += bitcoin-wallet-res.rc
-endif
 #
 
 # bitcoin-util binary #
@@ -1043,8 +942,6 @@ CLEANFILES += script/*.gcda script/*.gcno
 CLEANFILES += support/*.gcda support/*.gcno
 CLEANFILES += univalue/*.gcda univalue/*.gcno
 CLEANFILES += util/*.gcda util/*.gcno
-CLEANFILES += wallet/*.gcda wallet/*.gcno
-CLEANFILES += wallet/test/*.gcda wallet/test/*.gcno
 CLEANFILES += zmq/*.gcda zmq/*.gcno
 CLEANFILES += obj/build.h
 
