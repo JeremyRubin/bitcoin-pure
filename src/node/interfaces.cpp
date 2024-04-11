@@ -12,7 +12,6 @@
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
-#include <interfaces/wallet.h>
 #include <kernel/chain.h>
 #include <kernel/mempool_entry.h>
 #include <logging.h>
