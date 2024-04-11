@@ -117,7 +117,6 @@ BITCOIN_CORE_H = \
   bech32.h \
   bip324.h \
   blockencodings.h \
-  blockfilter.h \
   chain.h \
   chainparams.h \
   chainparamsbase.h \
@@ -154,8 +153,6 @@ BITCOIN_CORE_H = \
   httpserver.h \
   i2p.h \
   index/base.h \
-  index/blockfilterindex.h \
-  index/coinstatsindex.h \
   index/disktxpos.h \
   index/txindex.h \
   indirectmap.h \
@@ -173,7 +170,6 @@ BITCOIN_CORE_H = \
   kernel/chainparams.h \
   kernel/chainstatemanager_opts.h \
   kernel/checks.h \
-  kernel/coinstats.h \
   kernel/context.h \
   kernel/cs_main.h \
   kernel/disconnected_transactions.h \
@@ -343,7 +339,6 @@ libbitcoin_node_a_SOURCES = \
   banman.cpp \
   bip324.cpp \
   blockencodings.cpp \
-  blockfilter.cpp \
   chain.cpp \
   consensus/tx_verify.cpp \
   dbwrapper.cpp \
@@ -354,13 +349,10 @@ libbitcoin_node_a_SOURCES = \
   httpserver.cpp \
   i2p.cpp \
   index/base.cpp \
-  index/blockfilterindex.cpp \
-  index/coinstatsindex.cpp \
   index/txindex.cpp \
   init.cpp \
   kernel/chain.cpp \
   kernel/checks.cpp \
-  kernel/coinstats.cpp \
   kernel/context.cpp \
   kernel/cs_main.cpp \
   kernel/mempool_persist.cpp \
@@ -826,7 +818,6 @@ libbitcoinkernel_la_SOURCES = \
   kernel/chain.cpp \
   kernel/checks.cpp \
   kernel/chainparams.cpp \
-  kernel/coinstats.cpp \
   kernel/context.cpp \
   kernel/cs_main.cpp \
   kernel/mempool_persist.cpp \
