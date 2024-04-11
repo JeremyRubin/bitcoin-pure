@@ -160,7 +160,6 @@ BITCOIN_CORE_H = \
   interfaces/init.h \
   interfaces/ipc.h \
   interfaces/node.h \
-  interfaces/wallet.h \
   kernel/blockmanager_opts.h \
   kernel/chain.h \
   kernel/chainparams.h \
@@ -310,7 +309,6 @@ BITCOIN_CORE_H = \
   validation.h \
   validationinterface.h \
   versionbits.h \
-  walletinitinterface.h \
   warnings.h \
   zmq/zmqabstractnotifier.h \
   zmq/zmqnotificationinterface.h \
@@ -413,10 +411,6 @@ libbitcoin_node_a_SOURCES = \
   versionbits.cpp \
   $(BITCOIN_CORE_H)
 
-if !ENABLE_WALLET
-libbitcoin_node_a_SOURCES += dummywallet.cpp
-endif
-#
 
 # zmq #
 if ENABLE_ZMQ
@@ -431,10 +425,6 @@ libbitcoin_zmq_a_SOURCES = \
 endif
 #
 
-
-# wallet tool #
-libbitcoin_wallet_tool_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(BOOST_CPPFLAGS)
-libbitcoin_wallet_tool_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
 # crypto #
 crypto_libbitcoin_crypto_base_la_CPPFLAGS = $(AM_CPPFLAGS)

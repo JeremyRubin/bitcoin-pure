@@ -7,7 +7,6 @@
 #include <interfaces/echo.h>
 #include <interfaces/init.h>
 #include <interfaces/node.h>
-#include <interfaces/wallet.h>
 #include <node/context.h>
 #include <util/check.h>
 
