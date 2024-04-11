@@ -143,7 +143,6 @@ BITCOIN_CORE_H = \
   dbwrapper.h \
   deploymentinfo.h \
   deploymentstatus.h \
-  external_signer.h \
   flatfile.h \
   headerssync.h \
   httprpc.h \
@@ -581,7 +580,6 @@ libbitcoin_common_a_SOURCES = \
   core_read.cpp \
   core_write.cpp \
   deploymentinfo.cpp \
-  external_signer.cpp \
   init/common.cpp \
   kernel/chainparams.cpp \
   key.cpp \
@@ -596,7 +594,6 @@ libbitcoin_common_a_SOURCES = \
   policy/feerate.cpp \
   policy/policy.cpp \
   protocol.cpp \
-  rpc/external_signer.cpp \
   rpc/rawtransaction_util.cpp \
   rpc/request.cpp \
   rpc/util.cpp \
