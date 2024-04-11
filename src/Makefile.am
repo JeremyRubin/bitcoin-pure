@@ -214,7 +214,6 @@ BITCOIN_CORE_H = \
   node/mempool_persist_args.h \
   node/miner.h \
   node/mini_miner.h \
-  node/minisketchwrapper.h \
   node/peerman_args.h \
   node/transaction.h \
   node/txreconciliation.h \
@@ -380,7 +379,6 @@ libbitcoin_node_a_SOURCES = \
   node/mempool_persist_args.cpp \
   node/miner.cpp \
   node/mini_miner.cpp \
-  node/minisketchwrapper.cpp \
   node/peerman_args.cpp \
   node/transaction.cpp \
   node/txreconciliation.cpp \
@@ -1002,7 +1000,6 @@ endif
 	 echo "};"; \
 	} > "$@.new" && mv -f "$@.new" "$@"
 
-include Makefile.minisketch.include
 
 include Makefile.crc32c.include
 include Makefile.leveldb.include
