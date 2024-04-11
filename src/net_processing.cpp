@@ -8,7 +8,6 @@
 #include <addrman.h>
 #include <banman.h>
 #include <blockencodings.h>
-#include <blockfilter.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <consensus/validation.h>
@@ -161,10 +160,6 @@ static_assert(INVENTORY_BROADCAST_MAX <= MAX_PEER_TX_ANNOUNCEMENTS, "INVENTORY_B
 static constexpr auto AVG_FEEFILTER_BROADCAST_INTERVAL{10min};
 /** Maximum feefilter broadcast delay after significant change. */
 static constexpr auto MAX_FEEFILTER_CHANGE_DELAY{5min};
-/** Maximum number of compact filters that may be requested with one getcfilters. See BIP 157. */
-static constexpr uint32_t MAX_GETCFILTERS_SIZE = 1000;
-/** Maximum number of cf hashes that may be requested with one getcfheaders. See BIP 157. */
-static constexpr uint32_t MAX_GETCFHEADERS_SIZE = 2000;
 /** the maximum percentage of addresses from our addrman to return in response to a getaddr message. */
 static constexpr size_t MAX_PCT_ADDR_TO_SEND = 23;
 /** The maximum number of address records permitted in an ADDR message. */
@@ -3114,21 +3109,6 @@ bool PeerManagerImpl::ProcessOrphanTx(Peer& peer)
     return false;
 }
 
-bool PeerManagerImpl::PrepareBlockFilterRequest(CNode& node, Peer& peer,
-                                                BlockFilterType filter_type, uint32_t start_height,
-                                                const uint256& stop_hash, uint32_t max_height_diff,
-                                                const CBlockIndex*& stop_index,
-                                                BlockFilterIndex*& filter_index)
-{
-    const bool supported_filter_type =
-        (filter_type == BlockFilterType::BASIC &&
-         (peer.m_our_services & NODE_COMPACT_FILTERS));
-    if (!supported_filter_type) {
-        LogPrint(BCLog::NET, "peer %d requested unsupported block filter type: %d\n",
-                 node.GetId(), static_cast<uint8_t>(filter_type));
-        node.fDisconnect = true;
-        return false;
-    }
 
     {
         LOCK(cs_main);
@@ -4978,20 +4958,6 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         return;
     }
 
-    if (msg_type == NetMsgType::GETCFILTERS) {
-        ProcessGetCFilters(pfrom, *peer, vRecv);
-        return;
-    }
-
-    if (msg_type == NetMsgType::GETCFHEADERS) {
-        ProcessGetCFHeaders(pfrom, *peer, vRecv);
-        return;
-    }
-
-    if (msg_type == NetMsgType::GETCFCHECKPT) {
-        ProcessGetCFCheckPt(pfrom, *peer, vRecv);
-        return;
-    }
 
     if (msg_type == NetMsgType::NOTFOUND) {
         std::vector<CInv> vInv;

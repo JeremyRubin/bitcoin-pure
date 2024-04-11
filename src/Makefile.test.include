@@ -77,8 +77,6 @@ BITCOIN_TESTS =\
   test/bip324_tests.cpp \
   test/blockchain_tests.cpp \
   test/blockencodings_tests.cpp \
-  test/blockfilter_index_tests.cpp \
-  test/blockfilter_tests.cpp \
   test/blockmanager_tests.cpp \
   test/bloom_tests.cpp \
   test/bswap_tests.cpp \
@@ -271,7 +269,6 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/bitdeque.cpp \
  test/fuzz/block.cpp \
  test/fuzz/block_header.cpp \
- test/fuzz/blockfilter.cpp \
  test/fuzz/bloom_filter.cpp \
  test/fuzz/buffered_file.cpp \
  test/fuzz/chain.cpp \

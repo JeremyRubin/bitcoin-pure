@@ -218,42 +218,6 @@ extern const char* GETBLOCKTXN;
  */
 extern const char* BLOCKTXN;
 /**
- * getcfilters requests compact filters for a range of blocks.
- * Only available with service bit NODE_COMPACT_FILTERS as described by
- * BIP 157 & 158.
- */
-extern const char* GETCFILTERS;
-/**
- * cfilter is a response to a getcfilters request containing a single compact
- * filter.
- */
-extern const char* CFILTER;
-/**
- * getcfheaders requests a compact filter header and the filter hashes for a
- * range of blocks, which can then be used to reconstruct the filter headers
- * for those blocks.
- * Only available with service bit NODE_COMPACT_FILTERS as described by
- * BIP 157 & 158.
- */
-extern const char* GETCFHEADERS;
-/**
- * cfheaders is a response to a getcfheaders request containing a filter header
- * and a vector of filter hashes for each subsequent block in the requested range.
- */
-extern const char* CFHEADERS;
-/**
- * getcfcheckpt requests evenly spaced compact filter headers, enabling
- * parallelized download and validation of the headers between them.
- * Only available with service bit NODE_COMPACT_FILTERS as described by
- * BIP 157 & 158.
- */
-extern const char* GETCFCHECKPT;
-/**
- * cfcheckpt is a response to a getcfcheckpt request containing a vector of
- * evenly spaced filter headers for blocks on the requested chain.
- */
-extern const char* CFCHECKPT;
-/**
  * Indicates that a node prefers to relay transactions via wtxid, rather than
  * txid.
  * @since protocol version 70016 as described by BIP 339.

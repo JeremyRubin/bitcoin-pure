@@ -5,7 +5,6 @@
 
 #include <rpc/blockchain.h>
 
-#include <blockfilter.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <clientversion.h>
@@ -18,9 +17,6 @@
 #include <deploymentinfo.h>
 #include <deploymentstatus.h>
 #include <hash.h>
-#include <index/blockfilterindex.h>
-#include <index/coinstatsindex.h>
-#include <kernel/coinstats.h>
 #include <logging/timer.h>
 #include <net.h>
 #include <net_processing.h>
@@ -53,8 +49,6 @@
 #include <memory>
 #include <mutex>
 
-using kernel::CCoinsStats;
-using kernel::CoinStatsHashType;
 
 using node::BlockManager;
 using node::NodeContext;
@@ -814,203 +808,7 @@ static RPCHelpMan pruneblockchain()
     };
 }
 
-CoinStatsHashType ParseHashType(const std::string& hash_type_input)
-{
-    if (hash_type_input == "hash_serialized_3") {
-        return CoinStatsHashType::HASH_SERIALIZED;
-    } else if (hash_type_input == "muhash") {
-        return CoinStatsHashType::MUHASH;
-    } else if (hash_type_input == "none") {
-        return CoinStatsHashType::NONE;
-    } else {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("'%s' is not a valid hash_type", hash_type_input));
-    }
-}
 
-/**
- * Calculate statistics about the unspent transaction output set
- *
- * @param[in] index_requested Signals if the coinstatsindex should be used (when available).
- */
-static std::optional<kernel::CCoinsStats> GetUTXOStats(CCoinsView* view, node::BlockManager& blockman,
-                                                       kernel::CoinStatsHashType hash_type,
-                                                       const std::function<void()>& interruption_point = {},
-                                                       const CBlockIndex* pindex = nullptr,
-                                                       bool index_requested = true)
-{
-    // Use CoinStatsIndex if it is requested and available and a hash_type of Muhash or None was requested
-    if ((hash_type == kernel::CoinStatsHashType::MUHASH || hash_type == kernel::CoinStatsHashType::NONE) && g_coin_stats_index && index_requested) {
-        if (pindex) {
-            return g_coin_stats_index->LookUpStats(*pindex);
-        } else {
-            CBlockIndex& block_index = *CHECK_NONFATAL(WITH_LOCK(::cs_main, return blockman.LookupBlockIndex(view->GetBestBlock())));
-            return g_coin_stats_index->LookUpStats(block_index);
-        }
-    }
-
-    // If the coinstats index isn't requested or is otherwise not usable, the
-    // pindex should either be null or equal to the view's best block. This is
-    // because without the coinstats index we can only get coinstats about the
-    // best block.
-    CHECK_NONFATAL(!pindex || pindex->GetBlockHash() == view->GetBestBlock());
-
-    return kernel::ComputeUTXOStats(hash_type, view, blockman, interruption_point);
-}
-
-static RPCHelpMan gettxoutsetinfo()
-{
-    return RPCHelpMan{"gettxoutsetinfo",
-                "\nReturns statistics about the unspent transaction output set.\n"
-                "Note this call may take some time if you are not using coinstatsindex.\n",
-                {
-                    {"hash_type", RPCArg::Type::STR, RPCArg::Default{"hash_serialized_3"}, "Which UTXO set hash should be calculated. Options: 'hash_serialized_3' (the legacy algorithm), 'muhash', 'none'."},
-                    {"hash_or_height", RPCArg::Type::NUM, RPCArg::DefaultHint{"the current best block"}, "The block hash or height of the target height (only available with coinstatsindex).",
-                     RPCArgOptions{
-                         .skip_type_check = true,
-                         .type_str = {"", "string or numeric"},
-                     }},
-                    {"use_index", RPCArg::Type::BOOL, RPCArg::Default{true}, "Use coinstatsindex, if available."},
-                },
-                RPCResult{
-                    RPCResult::Type::OBJ, "", "",
-                    {
-                        {RPCResult::Type::NUM, "height", "The block height (index) of the returned statistics"},
-                        {RPCResult::Type::STR_HEX, "bestblock", "The hash of the block at which these statistics are calculated"},
-                        {RPCResult::Type::NUM, "txouts", "The number of unspent transaction outputs"},
-                        {RPCResult::Type::NUM, "bogosize", "Database-independent, meaningless metric indicating the UTXO set size"},
-                        {RPCResult::Type::STR_HEX, "hash_serialized_3", /*optional=*/true, "The serialized hash (only present if 'hash_serialized_3' hash_type is chosen)"},
-                        {RPCResult::Type::STR_HEX, "muhash", /*optional=*/true, "The serialized hash (only present if 'muhash' hash_type is chosen)"},
-                        {RPCResult::Type::NUM, "transactions", /*optional=*/true, "The number of transactions with unspent outputs (not available when coinstatsindex is used)"},
-                        {RPCResult::Type::NUM, "disk_size", /*optional=*/true, "The estimated size of the chainstate on disk (not available when coinstatsindex is used)"},
-                        {RPCResult::Type::STR_AMOUNT, "total_amount", "The total amount of coins in the UTXO set"},
-                        {RPCResult::Type::STR_AMOUNT, "total_unspendable_amount", /*optional=*/true, "The total amount of coins permanently excluded from the UTXO set (only available if coinstatsindex is used)"},
-                        {RPCResult::Type::OBJ, "block_info", /*optional=*/true, "Info on amounts in the block at this block height (only available if coinstatsindex is used)",
-                        {
-                            {RPCResult::Type::STR_AMOUNT, "prevout_spent", "Total amount of all prevouts spent in this block"},
-                            {RPCResult::Type::STR_AMOUNT, "coinbase", "Coinbase subsidy amount of this block"},
-                            {RPCResult::Type::STR_AMOUNT, "new_outputs_ex_coinbase", "Total amount of new outputs created by this block"},
-                            {RPCResult::Type::STR_AMOUNT, "unspendable", "Total amount of unspendable outputs created in this block"},
-                            {RPCResult::Type::OBJ, "unspendables", "Detailed view of the unspendable categories",
-                            {
-                                {RPCResult::Type::STR_AMOUNT, "genesis_block", "The unspendable amount of the Genesis block subsidy"},
-                                {RPCResult::Type::STR_AMOUNT, "bip30", "Transactions overridden by duplicates (no longer possible with BIP30)"},
-                                {RPCResult::Type::STR_AMOUNT, "scripts", "Amounts sent to scripts that are unspendable (for example OP_RETURN outputs)"},
-                                {RPCResult::Type::STR_AMOUNT, "unclaimed_rewards", "Fee rewards that miners did not claim in their coinbase transaction"},
-                            }}
-                        }},
-                    }},
-                RPCExamples{
-                    HelpExampleCli("gettxoutsetinfo", "") +
-                    HelpExampleCli("gettxoutsetinfo", R"("none")") +
-                    HelpExampleCli("gettxoutsetinfo", R"("none" 1000)") +
-                    HelpExampleCli("gettxoutsetinfo", R"("none" '"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09"')") +
-                    HelpExampleCli("-named gettxoutsetinfo", R"(hash_type='muhash' use_index='false')") +
-                    HelpExampleRpc("gettxoutsetinfo", "") +
-                    HelpExampleRpc("gettxoutsetinfo", R"("none")") +
-                    HelpExampleRpc("gettxoutsetinfo", R"("none", 1000)") +
-                    HelpExampleRpc("gettxoutsetinfo", R"("none", "00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09")")
-                },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    UniValue ret(UniValue::VOBJ);
-
-    const CBlockIndex* pindex{nullptr};
-    const CoinStatsHashType hash_type{request.params[0].isNull() ? CoinStatsHashType::HASH_SERIALIZED : ParseHashType(request.params[0].get_str())};
-    bool index_requested = request.params[2].isNull() || request.params[2].get_bool();
-
-    NodeContext& node = EnsureAnyNodeContext(request.context);
-    ChainstateManager& chainman = EnsureChainman(node);
-    Chainstate& active_chainstate = chainman.ActiveChainstate();
-    active_chainstate.ForceFlushStateToDisk();
-
-    CCoinsView* coins_view;
-    BlockManager* blockman;
-    {
-        LOCK(::cs_main);
-        coins_view = &active_chainstate.CoinsDB();
-        blockman = &active_chainstate.m_blockman;
-        pindex = blockman->LookupBlockIndex(coins_view->GetBestBlock());
-    }
-
-    if (!request.params[1].isNull()) {
-        if (!g_coin_stats_index) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Querying specific block heights requires coinstatsindex");
-        }
-
-        if (hash_type == CoinStatsHashType::HASH_SERIALIZED) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "hash_serialized_3 hash type cannot be queried for a specific block");
-        }
-
-        if (!index_requested) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Cannot set use_index to false when querying for a specific block");
-        }
-        pindex = ParseHashOrHeight(request.params[1], chainman);
-    }
-
-    if (index_requested && g_coin_stats_index) {
-        if (!g_coin_stats_index->BlockUntilSyncedToCurrentChain()) {
-            const IndexSummary summary{g_coin_stats_index->GetSummary()};
-
-            // If a specific block was requested and the index has already synced past that height, we can return the
-            // data already even though the index is not fully synced yet.
-            if (pindex->nHeight > summary.best_block_height) {
-                throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to get data because coinstatsindex is still syncing. Current height: %d", summary.best_block_height));
-            }
-        }
-    }
-
-    const std::optional<CCoinsStats> maybe_stats = GetUTXOStats(coins_view, *blockman, hash_type, node.rpc_interruption_point, pindex, index_requested);
-    if (maybe_stats.has_value()) {
-        const CCoinsStats& stats = maybe_stats.value();
-        ret.pushKV("height", (int64_t)stats.nHeight);
-        ret.pushKV("bestblock", stats.hashBlock.GetHex());
-        ret.pushKV("txouts", (int64_t)stats.nTransactionOutputs);
-        ret.pushKV("bogosize", (int64_t)stats.nBogoSize);
-        if (hash_type == CoinStatsHashType::HASH_SERIALIZED) {
-            ret.pushKV("hash_serialized_3", stats.hashSerialized.GetHex());
-        }
-        if (hash_type == CoinStatsHashType::MUHASH) {
-            ret.pushKV("muhash", stats.hashSerialized.GetHex());
-        }
-        CHECK_NONFATAL(stats.total_amount.has_value());
-        ret.pushKV("total_amount", ValueFromAmount(stats.total_amount.value()));
-        if (!stats.index_used) {
-            ret.pushKV("transactions", static_cast<int64_t>(stats.nTransactions));
-            ret.pushKV("disk_size", stats.nDiskSize);
-        } else {
-            ret.pushKV("total_unspendable_amount", ValueFromAmount(stats.total_unspendable_amount));
-
-            CCoinsStats prev_stats{};
-            if (pindex->nHeight > 0) {
-                const std::optional<CCoinsStats> maybe_prev_stats = GetUTXOStats(coins_view, *blockman, hash_type, node.rpc_interruption_point, pindex->pprev, index_requested);
-                if (!maybe_prev_stats) {
-                    throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to read UTXO set");
-                }
-                prev_stats = maybe_prev_stats.value();
-            }
-
-            UniValue block_info(UniValue::VOBJ);
-            block_info.pushKV("prevout_spent", ValueFromAmount(stats.total_prevout_spent_amount - prev_stats.total_prevout_spent_amount));
-            block_info.pushKV("coinbase", ValueFromAmount(stats.total_coinbase_amount - prev_stats.total_coinbase_amount));
-            block_info.pushKV("new_outputs_ex_coinbase", ValueFromAmount(stats.total_new_outputs_ex_coinbase_amount - prev_stats.total_new_outputs_ex_coinbase_amount));
-            block_info.pushKV("unspendable", ValueFromAmount(stats.total_unspendable_amount - prev_stats.total_unspendable_amount));
-
-            UniValue unspendables(UniValue::VOBJ);
-            unspendables.pushKV("genesis_block", ValueFromAmount(stats.total_unspendables_genesis_block - prev_stats.total_unspendables_genesis_block));
-            unspendables.pushKV("bip30", ValueFromAmount(stats.total_unspendables_bip30 - prev_stats.total_unspendables_bip30));
-            unspendables.pushKV("scripts", ValueFromAmount(stats.total_unspendables_scripts - prev_stats.total_unspendables_scripts));
-            unspendables.pushKV("unclaimed_rewards", ValueFromAmount(stats.total_unspendables_unclaimed_rewards - prev_stats.total_unspendables_unclaimed_rewards));
-            block_info.pushKV("unspendables", unspendables);
-
-            ret.pushKV("block_info", block_info);
-        }
-    } else {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to read UTXO set");
-    }
-    return ret;
-},
-    };
-}
 
 static RPCHelpMan gettxout()
 {
@@ -2353,31 +2151,6 @@ static RPCHelpMan scanblocks()
         const std::string filtertype_name{request.params[4].isNull() ? "basic" : request.params[4].get_str()};
 
 
-static RPCHelpMan getblockfilter()
-{
-    return RPCHelpMan{"getblockfilter",
-                "\nRetrieve a BIP 157 content filter for a particular block.\n",
-                {
-                    {"blockhash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hash of the block"},
-                    {"filtertype", RPCArg::Type::STR, RPCArg::Default{BlockFilterTypeName(BlockFilterType::BASIC)}, "The type name of the filter"},
-                },
-                RPCResult{
-                    RPCResult::Type::OBJ, "", "",
-                    {
-                        {RPCResult::Type::STR_HEX, "filter", "the hex-encoded filter data"},
-                        {RPCResult::Type::STR_HEX, "header", "the hex-encoded filter header"},
-                    }},
-                RPCExamples{
-                    HelpExampleCli("getblockfilter", "\"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09\" \"basic\"") +
-                    HelpExampleRpc("getblockfilter", "\"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09\", \"basic\"")
-                },
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    uint256 block_hash = ParseHashV(request.params[0], "blockhash");
-    std::string filtertype_name = BlockFilterTypeName(BlockFilterType::BASIC);
-    if (!request.params[1].isNull()) {
-        filtertype_name = request.params[1].get_str();
-    }
 
     BlockFilterType filtertype;
     if (!BlockFilterTypeByName(filtertype_name, filtertype)) {
@@ -2732,14 +2505,10 @@ void RegisterBlockchainRPCCommands(CRPCTable& t)
         {"blockchain", &getdifficulty},
         {"blockchain", &getdeploymentinfo},
         {"blockchain", &gettxout},
-        {"blockchain", &gettxoutsetinfo},
         {"blockchain", &pruneblockchain},
         {"blockchain", &verifychain},
         {"blockchain", &preciousblock},
         {"blockchain", &scantxoutset},
-        {"blockchain", &getblockfilter},
-        {"blockchain", &dumptxoutset},
-        {"blockchain", &loadtxoutset},
         {"blockchain", &getchainstates},
         {"hidden", &invalidateblock},
         {"hidden", &reconsiderblock},
