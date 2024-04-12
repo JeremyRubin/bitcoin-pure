@@ -11,7 +11,7 @@
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
-bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror)
+bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptExecutionData& execdata, ScriptError* serror)
 {
     static const CScriptNum bnZero(0);
     static const CScriptNum bnOne(1);
@@ -20,9 +20,6 @@ bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const 
     static const valtype vchFalse(0);
     // static const valtype vchZero(0);
     static const valtype vchTrue(1, 1);
-
-    // sigversion cannot be TAPROOT here, as it admits no script execution.
-    assert(sigversion == SigVersion::TAPSCRIPT);
 
     CScript::const_iterator pc = script.begin();
     CScript::const_iterator pend = script.end();
@@ -652,7 +649,7 @@ bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const 
                     valtype& vchPubKey = stacktop(-1);
 
                     bool fSuccess = true;
-                    if (!EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, sigversion, serror, fSuccess)) return false;
+                    if (!EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, SigVersion::TAPSCRIPT, serror, fSuccess)) return false;
                     popstack(stack);
                     popstack(stack);
                     stack.push_back(fSuccess ? vchTrue : vchFalse);
@@ -676,7 +673,7 @@ bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const 
                     const valtype& pubkey = stacktop(-1);
 
                     bool success = true;
-                    if (!EvalChecksig(sig, pubkey, pbegincodehash, pend, execdata, flags, checker, sigversion, serror, success)) return false;
+                    if (!EvalChecksig(sig, pubkey, pbegincodehash, pend, execdata, flags, checker, SigVersion::TAPSCRIPT, serror, success)) return false;
                     popstack(stack);
                     popstack(stack);
                     popstack(stack);
@@ -712,8 +709,8 @@ bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const 
     return set_success(serror);
 }
 
-bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptError* serror)
+bool TapScriptEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptError* serror)
 {
     ScriptExecutionData execdata;
-    return TapScriptEvalScript(stack, script, flags, checker, sigversion, execdata, serror);
+    return TapScriptEvalScript(stack, script, flags, checker, execdata, serror);
 }

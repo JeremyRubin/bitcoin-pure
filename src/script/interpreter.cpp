@@ -691,9 +691,9 @@ static bool ExecuteWitnessScript(const Span<const valtype>& stack_span, const CS
 
     // Run the script interpreter.
     if (sigversion == SigVersion::TAPSCRIPT)
-        if (!TapScriptEvalScript(stack, exec_script, flags, checker, sigversion, execdata, serror)) return false;
+        if (!TapScriptEvalScript(stack, exec_script, flags, checker, execdata, serror)) return false;
     if (sigversion == SigVersion::WITNESS_V0)
-        if (!SegWitEvalScript(stack, exec_script, flags, checker, sigversion, execdata, serror)) return false;
+        if (!SegWitEvalScript(stack, exec_script, flags, checker, execdata, serror)) return false;
 
     // Scripts inside witness implicitly require cleanstack behaviour
     if (stack.size() != 1) return set_error(serror, SCRIPT_ERR_CLEANSTACK);
@@ -846,12 +846,12 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
     // scriptSig and scriptPubKey must be evaluated sequentially on the same stack
     // rather than being simply concatenated (see CVE-2010-5141)
     std::vector<std::vector<unsigned char> > stack, stackCopy;
-    if (!LegacyEvalScript(stack, scriptSig, flags, checker, SigVersion::BASE, serror))
+    if (!LegacyEvalScript(stack, scriptSig, flags, checker, serror))
         // serror is set
         return false;
     if (flags & SCRIPT_VERIFY_P2SH)
         stackCopy = stack;
-    if (!LegacyEvalScript(stack, scriptPubKey, flags, checker, SigVersion::BASE, serror))
+    if (!LegacyEvalScript(stack, scriptPubKey, flags, checker, serror))
         // serror is set
         return false;
     if (stack.empty())
@@ -897,7 +897,7 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
         CScript pubKey2(pubKeySerialized.begin(), pubKeySerialized.end());
         popstack(stack);
 
-        if (!LegacyEvalScript(stack, pubKey2, flags, checker, SigVersion::BASE, serror))
+        if (!LegacyEvalScript(stack, pubKey2, flags, checker, serror))
             // serror is set
             return false;
         if (stack.empty())

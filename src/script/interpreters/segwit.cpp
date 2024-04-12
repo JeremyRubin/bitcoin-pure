@@ -11,7 +11,7 @@
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
-bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptExecutionData& execdata, ScriptError* serror)
+bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptExecutionData& execdata, ScriptError* serror)
 {
     static const CScriptNum bnZero(0);
     static const CScriptNum bnOne(1);
@@ -20,9 +20,6 @@ bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
     static const valtype vchFalse(0);
     // static const valtype vchZero(0);
     static const valtype vchTrue(1, 1);
-
-    // sigversion cannot be TAPROOT here, as it admits no script execution.
-    assert(sigversion == SigVersion::WITNESS_V0);
 
     CScript::const_iterator pc = script.begin();
     CScript::const_iterator pend = script.end();
@@ -661,7 +658,7 @@ bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
                     valtype& vchPubKey = stacktop(-1);
 
                     bool fSuccess = true;
-                    if (!EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, sigversion, serror, fSuccess)) return false;
+                    if (!EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, SigVersion::WITNESS_V0, serror, fSuccess)) return false;
                     popstack(stack);
                     popstack(stack);
                     stack.push_back(fSuccess ? vchTrue : vchFalse);
@@ -732,13 +729,13 @@ bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
                         // Note how this makes the exact order of pubkey/signature evaluation
                         // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
                         // See the script_(in)valid tests for details.
-                        if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, sigversion, serror)) {
+                        if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, SigVersion::WITNESS_V0, serror)) {
                             // serror is set
                             return false;
                         }
 
                         // Check signature
-                        bool fOk = checker.CheckECDSASignature(vchSig, vchPubKey, scriptCode, sigversion);
+                        bool fOk = checker.CheckECDSASignature(vchSig, vchPubKey, scriptCode, SigVersion::WITNESS_V0);
 
                         if (fOk) {
                             isig++;
@@ -808,8 +805,8 @@ bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
     return set_success(serror);
 }
 
-bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptError* serror)
+bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptError* serror)
 {
     ScriptExecutionData execdata;
-    return SegWitEvalScript(stack, script, flags, checker, sigversion, execdata, serror);
+    return SegWitEvalScript(stack, script, flags, checker, execdata, serror);
 }
