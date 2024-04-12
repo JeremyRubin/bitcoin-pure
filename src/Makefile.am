@@ -536,6 +536,12 @@ libbitcoin_consensus_a_SOURCES = \
   script/bitcoinconsensus.cpp \
   script/interpreter.cpp \
   script/interpreter.h \
+  script/interpreters/legacy.h \
+  script/interpreters/legacy.cpp \
+  script/interpreters/segwit.h \
+  script/interpreters/segwit.cpp \
+  script/interpreters/tapscript.h \
+  script/interpreters/tapscript.cpp \
   script/script.cpp \
   script/script.h \
   script/script_error.cpp \
@@ -827,6 +833,9 @@ libbitcoinkernel_la_SOURCES = \
   randomenv.cpp \
   scheduler.cpp \
   script/interpreter.cpp \
+  script/interpreters/legacy.cpp \
+  script/interpreters/segwit.cpp \
+  script/interpreters/tapscript.cpp \
   script/script.cpp \
   script/script_error.cpp \
   script/sigcache.cpp \
