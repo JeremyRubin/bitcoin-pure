@@ -419,9 +419,6 @@ bool IsDefinedHashtypeSignature(const valtype &vchSig);
 bool CheckSignatureEncoding(const std::vector<unsigned char> &vchSig, unsigned int flags, ScriptError* serror);
 
 
-bool CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, const SigVersion &sigversion, ScriptError* serror);
-
-
 /** A data type to abstract out the condition stack during script execution.
  *
  * Conceptually it acts like a vector of booleans, one for each level of nested

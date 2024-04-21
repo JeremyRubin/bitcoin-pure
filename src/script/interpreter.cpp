@@ -43,74 +43,6 @@ int FindAndDelete(CScript& script, const CScript& b)
 
     return nFound;
 }
-static bool EvalChecksigPreTapscript(const valtype& vchSig, const valtype& vchPubKey, CScript::const_iterator pbegincodehash, CScript::const_iterator pend, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptError* serror, bool& fSuccess)
-{
-    assert(sigversion == SigVersion::BASE || sigversion == SigVersion::WITNESS_V0);
-
-    // Subset of script starting at the most recent codeseparator
-    CScript scriptCode(pbegincodehash, pend);
-
-    // Drop the signature in pre-segwit scripts but not segwit scripts
-    if (sigversion == SigVersion::BASE) {
-        int found = FindAndDelete(scriptCode, CScript() << vchSig);
-        if (found > 0 && (flags & SCRIPT_VERIFY_CONST_SCRIPTCODE))
-            return set_error(serror, SCRIPT_ERR_SIG_FINDANDDELETE);
-    }
-
-    if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, sigversion, serror)) {
-        //serror is set
-        return false;
-    }
-    fSuccess = checker.CheckECDSASignature(vchSig, vchPubKey, scriptCode, sigversion);
-
-    if (!fSuccess && (flags & SCRIPT_VERIFY_NULLFAIL) && vchSig.size())
-        return set_error(serror, SCRIPT_ERR_SIG_NULLFAIL);
-
-    return true;
-}
-
-static bool EvalChecksigTapscript(const valtype& sig, const valtype& pubkey, ScriptExecutionData& execdata, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptError* serror, bool& success)
-{
-    assert(sigversion == SigVersion::TAPSCRIPT);
-
-    /*
-     *  The following validation sequence is consensus critical. Please note how --
-     *    upgradable public key versions precede other rules;
-     *    the script execution fails when using empty signature with invalid public key;
-     *    the script execution fails when using non-empty invalid signature.
-     */
-    success = !sig.empty();
-    if (success) {
-        // Implement the sigops/witnesssize ratio test.
-        // Passing with an upgradable public key version is also counted.
-        assert(execdata.m_validation_weight_left_init);
-        execdata.m_validation_weight_left -= VALIDATION_WEIGHT_PER_SIGOP_PASSED;
-        if (execdata.m_validation_weight_left < 0) {
-            return set_error(serror, SCRIPT_ERR_TAPSCRIPT_VALIDATION_WEIGHT);
-        }
-    }
-    if (pubkey.size() == 0) {
-        return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
-    } else if (pubkey.size() == 32) {
-        if (success && !checker.CheckSchnorrSignature(sig, pubkey, sigversion, execdata, serror)) {
-            return false; // serror is set
-        }
-    } else {
-        /*
-         *  New public key version softforks should be defined before this `else` block.
-         *  Generally, the new code should not do anything but failing the script execution. To avoid
-         *  consensus bugs, it should not modify any existing values (including `success`).
-         */
-        if ((flags & SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_PUBKEYTYPE) != 0) {
-            return set_error(serror, SCRIPT_ERR_DISCOURAGE_UPGRADABLE_PUBKEYTYPE);
-        }
-    }
-
-    return true;
-}
-
-
-
 
 namespace {
 
@@ -997,23 +929,6 @@ size_t CountWitnessSigOps(const CScript& scriptSig, const CScript& scriptPubKey,
     return 0;
 }
 
-bool EvalChecksig(const valtype& sig, const valtype& pubkey, CScript::const_iterator pbegincodehash, CScript::const_iterator pend, ScriptExecutionData& execdata, unsigned int flags, const BaseSignatureChecker& checker, SigVersion sigversion, ScriptError* serror, bool& success)
-{
-    switch (sigversion) {
-    case SigVersion::BASE:
-    case SigVersion::WITNESS_V0:
-        return EvalChecksigPreTapscript(sig, pubkey, pbegincodehash, pend, flags, checker, sigversion, serror, success);
-    case SigVersion::TAPSCRIPT:
-        return EvalChecksigTapscript(sig, pubkey, execdata, flags, checker, sigversion, serror, success);
-    case SigVersion::TAPROOT:
-        // Key path spending in Taproot has no script, so this is unreachable.
-        break;
-    }
-    assert(false);
-}
-
-
-
 
 
 bool IsCompressedOrUncompressedPubKey(const valtype &vchPubKey) {
@@ -1170,13 +1085,3 @@ bool CheckSignatureEncoding(const std::vector<unsigned char> &vchSig, unsigned i
     return true;
 }
 
-bool CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, const SigVersion &sigversion, ScriptError* serror) {
-    if ((flags & SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(vchPubKey)) {
-        return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
-    }
-    // Only compressed keys are accepted in segwit
-    if ((flags & SCRIPT_VERIFY_WITNESS_PUBKEYTYPE) != 0 && sigversion == SigVersion::WITNESS_V0 && !IsCompressedPubKey(vchPubKey)) {
-        return set_error(serror, SCRIPT_ERR_WITNESS_PUBKEYTYPE);
-    }
-    return true;
-}

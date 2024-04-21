@@ -11,6 +11,35 @@
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
+
+bool CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, ScriptError* serror) {
+    if ((flags & SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(vchPubKey)) {
+        return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
+    }
+    return true;
+}
+static bool EvalChecksigLegacy(const valtype& vchSig, const valtype& vchPubKey, CScript::const_iterator pbegincodehash, CScript::const_iterator pend, unsigned int flags, const BaseSignatureChecker& checker, ScriptError* serror, bool& fSuccess)
+{
+    // Subset of script starting at the most recent codeseparator
+    CScript scriptCode(pbegincodehash, pend);
+
+    // Drop the signature in pre-segwit scripts but not segwit scripts
+    int found = FindAndDelete(scriptCode, CScript() << vchSig);
+    if (found > 0 && (flags & SCRIPT_VERIFY_CONST_SCRIPTCODE))
+        return set_error(serror, SCRIPT_ERR_SIG_FINDANDDELETE);
+
+    if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, serror)) {
+        // serror is set
+        return false;
+    }
+    fSuccess = checker.CheckECDSASignature(vchSig, vchPubKey, scriptCode, SigVersion::BASE);
+
+    if (!fSuccess && (flags & SCRIPT_VERIFY_NULLFAIL) && vchSig.size())
+        return set_error(serror, SCRIPT_ERR_SIG_NULLFAIL);
+
+    return true;
+}
+
 bool LegacyEvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, unsigned int flags, const BaseSignatureChecker& checker, ScriptExecutionData& execdata, ScriptError* serror)
 {
     static const CScriptNum bnZero(0);
@@ -654,7 +683,7 @@ bool LegacyEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
                     valtype& vchPubKey = stacktop(-1);
 
                     bool fSuccess = true;
-                    if (!EvalChecksig(vchSig, vchPubKey, pbegincodehash, pend, execdata, flags, checker, SigVersion::BASE, serror, fSuccess)) return false;
+                    if (!EvalChecksigLegacy(vchSig, vchPubKey, pbegincodehash, pend, flags, checker, serror, fSuccess)) return false;
                     popstack(stack);
                     popstack(stack);
                     stack.push_back(fSuccess ? vchTrue : vchFalse);
@@ -727,7 +756,7 @@ bool LegacyEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
                         // Note how this makes the exact order of pubkey/signature evaluation
                         // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
                         // See the script_(in)valid tests for details.
-                        if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, SigVersion::BASE, serror)) {
+                        if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, serror)) {
                             // serror is set
                             return false;
                         }
@@ -808,3 +837,4 @@ bool LegacyEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
     ScriptExecutionData execdata;
     return LegacyEvalScript(stack, script, flags, checker, execdata, serror);
 }
+
