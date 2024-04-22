@@ -12,7 +12,7 @@
 #include <script/script.h>
 #include <uint256.h>
 
-bool CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, ScriptError* serror) {
+bool WitnessV0CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, ScriptError* serror) {
     if ((flags & SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(vchPubKey)) {
         return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
     }
@@ -27,7 +27,7 @@ static bool EvalChecksigWitnessV0(const valtype& vchSig, const valtype& vchPubKe
     // Subset of script starting at the most recent codeseparator
     CScript scriptCode(pbegincodehash, pend);
 
-    if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, serror)) {
+    if (!CheckSignatureEncoding(vchSig, flags, serror) || !WitnessV0CheckPubKeyEncoding(vchPubKey, flags, serror)) {
         //serror is set
         return false;
     }
@@ -756,7 +756,7 @@ bool SegWitEvalScript(std::vector<std::vector<unsigned char> >& stack, const CSc
                         // Note how this makes the exact order of pubkey/signature evaluation
                         // distinguishable by CHECKMULTISIG NOT if the STRICTENC flag is set.
                         // See the script_(in)valid tests for details.
-                        if (!CheckSignatureEncoding(vchSig, flags, serror) || !CheckPubKeyEncoding(vchPubKey, flags, serror)) {
+                        if (!CheckSignatureEncoding(vchSig, flags, serror) || !WitnessV0CheckPubKeyEncoding(vchPubKey, flags, serror)) {
                             // serror is set
                             return false;
                         }
