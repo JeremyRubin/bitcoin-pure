@@ -29,7 +29,6 @@
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <script/script.h>
-#include <script/signingprovider.h>
 #include <txmempool.h>
 #include <univalue.h>
 #include <util/strencodings.h>

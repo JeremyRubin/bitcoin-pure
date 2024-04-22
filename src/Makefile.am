@@ -245,7 +245,6 @@ BITCOIN_CORE_H = \
   scheduler.h \
   script/keyorigin.h \
   script/sigcache.h \
-  script/signingprovider.h \
   script/solver.h \
   signet.h \
   streams.h \
@@ -594,7 +593,6 @@ libbitcoin_common_a_SOURCES = \
   rpc/request.cpp \
   rpc/util.cpp \
   scheduler.cpp \
-  script/signingprovider.cpp \
   script/solver.cpp \
   warnings.cpp \
   $(BITCOIN_CORE_H)
